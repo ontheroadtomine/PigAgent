@@ -1,10 +1,59 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import mermaid from 'mermaid';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 const COPY_TIMEOUT = 2000;
 
-function CodeBlock({ language, content }: { language?: string; content: string }) {
+mermaid.initialize({
+  startOnLoad: false,
+  securityLevel: 'strict',
+  theme: 'default',
+  fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+});
+
+function MermaidBlock({ content }: { content: string }) {
+  const idRef = useRef(`mermaid_${Math.random().toString(36).slice(2)}`);
+  const [svg, setSvg] = useState('');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    setError('');
+    setSvg('');
+
+    mermaid.render(idRef.current, content)
+      .then(result => {
+        if (!cancelled) setSvg(result.svg);
+      })
+      .catch((err: any) => {
+        if (!cancelled) setError(err?.message || String(err));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [content]);
+
+  if (error) {
+    return <CodeBlock language="mermaid" content={content} label={`Mermaid parse error: ${error}`} />;
+  }
+
+  return (
+    <div className="my-2 overflow-x-auto rounded-md border border-[var(--border)] bg-[var(--background)] p-3">
+      {svg ? (
+        <div className="min-w-fit" dangerouslySetInnerHTML={{ __html: svg }} />
+      ) : (
+        <div className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
+          <span className="h-3 w-3 animate-spin rounded-full border-2 border-[var(--border)] border-t-[var(--foreground)]" />
+          渲染 Mermaid 图...
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CodeBlock({ language, content, label }: { language?: string; content: string; label?: string }) {
   const [copied, setCopied] = React.useState(false);
 
   const handleCopy = useCallback(async () => {
@@ -27,7 +76,7 @@ function CodeBlock({ language, content }: { language?: string; content: string }
   return (
     <div className="relative group my-2">
       <div className="flex items-center justify-between rounded-t-md border border-[var(--border)] bg-[var(--muted)]/40 px-3 py-1.5">
-        <span className="text-[var(--muted-foreground)] text-[11px] font-mono">{language || 'code'}</span>
+        <span className="text-[var(--muted-foreground)] text-[11px] font-mono">{label || language || 'code'}</span>
         <button onClick={handleCopy} className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] text-[11px] transition">
           {copied ? 'Copied!' : 'Copy'}
         </button>
@@ -102,7 +151,12 @@ function parseMarkdown(text: string): React.ReactNode[] {
         i++;
       }
       i++; // closing ```
-      nodes.push(<CodeBlock key={key++} language={lang || undefined} content={codeLines.join('\n')} />);
+      const codeContent = codeLines.join('\n');
+      nodes.push(
+        lang.toLowerCase() === 'mermaid'
+          ? <MermaidBlock key={key++} content={codeContent} />
+          : <CodeBlock key={key++} language={lang || undefined} content={codeContent} />
+      );
       continue;
     }
 

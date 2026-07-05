@@ -60,10 +60,13 @@ export interface AgentLoopResult {
     name: string;
     args: Record<string, unknown>;
     ok: boolean;
+    output?: string;
   }>;
 }
 
 export type AgentLoopEvent =
-  | { type: 'status'; status: 'thinking' | 'executing' | 'streaming'; message?: string }
+  | { type: 'status'; status: 'thinking' | 'executing' | 'post_tool' | 'streaming'; message?: string }
   | { type: 'tool_start'; name: string; args: Record<string, unknown> }
-  | { type: 'tool_result'; name: string; ok: boolean; output: string };
+  | { type: 'tool_result'; name: string; ok: boolean; output: string }
+  | { type: 'text_start' }
+  | { type: 'text_delta'; delta: string };

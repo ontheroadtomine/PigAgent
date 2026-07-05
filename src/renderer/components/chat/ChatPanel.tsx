@@ -49,6 +49,7 @@ export default function ChatPanel() {
     execStatus === 'connecting' ? '正在连接模型'
       : execStatus === 'thinking' ? '思考中'
       : execStatus === 'executing' ? '正在执行工具'
+      : execStatus === 'post_tool' ? '工具执行完成，正在整理最终回复'
       : execStatus === 'streaming' ? '正在接收回复'
       : '停止生成';
 

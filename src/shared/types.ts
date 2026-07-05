@@ -10,7 +10,7 @@ export type ContentBlock =
 
 // —— Execution status ——
 
-export type ExecutionStatus = 'connecting' | 'thinking' | 'executing' | 'streaming' | 'done';
+export type ExecutionStatus = 'connecting' | 'thinking' | 'executing' | 'post_tool' | 'streaming' | 'done';
 
 // —— Chat messages ——
 
@@ -150,7 +150,9 @@ export type LlmApiChatEvent =
   | { type: 'status'; status: ExecutionStatus; message?: string }
   | { type: 'tool_start'; name: string; args: Record<string, unknown> }
   | { type: 'tool_result'; name: string; ok: boolean; output: string }
-  | { type: 'final'; content: string; latencyMs: number }
+  | { type: 'text_start' }
+  | { type: 'text_delta'; delta: string }
+  | { type: 'final'; content?: string; latencyMs: number }
   | { type: 'error'; error: string };
 
 export interface AppSettings {

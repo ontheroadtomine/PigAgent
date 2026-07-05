@@ -288,13 +288,44 @@ function updateAssistantFromLlmEvent(assistantId: string, event: LlmApiChatEvent
         toolName: event.name,
         toolOutput: event.output,
       });
-      msgs[idx] = { ...assistant, blocks, status: 'thinking', partial: true };
+      const statusIndex = blocks.findIndex(block => block.id === `${assistantId}_status`);
+      if (statusIndex >= 0) {
+        blocks[statusIndex] = { id: `${assistantId}_status`, type: 'thinking', content: '工具执行完成，正在整理最终回复' };
+      } else {
+        blocks.push({ id: `${assistantId}_status`, type: 'thinking', content: '工具执行完成，正在整理最终回复' });
+      }
+      msgs[idx] = { ...assistant, blocks, status: 'post_tool', partial: true };
+      return { messages: msgs };
+    }
+
+    if (event.type === 'text_start') {
+      const streamBlockId = `${assistantId}_stream`;
+      if (!blocks.some(block => block.id === streamBlockId)) {
+        blocks.push({ id: streamBlockId, type: 'text', content: '' });
+      }
+      msgs[idx] = { ...assistant, blocks, status: 'streaming', partial: true };
+      return { messages: msgs };
+    }
+
+    if (event.type === 'text_delta') {
+      const streamBlockId = `${assistantId}_stream`;
+      const textIndex = blocks.findIndex(block => block.id === streamBlockId);
+      if (textIndex >= 0 && blocks[textIndex].type === 'text') {
+        const block = blocks[textIndex];
+        blocks[textIndex] = { ...block, content: block.content + event.delta };
+      } else {
+        blocks.push({ id: streamBlockId, type: 'text', content: event.delta });
+      }
+      msgs[idx] = { ...assistant, blocks, status: 'streaming', partial: true };
       return { messages: msgs };
     }
 
     if (event.type === 'final') {
       const finalBlocks = blocks.filter(block => !(block.type === 'thinking' && block.id === `${assistantId}_status`));
-      finalBlocks.push({ id: `${assistantId}_final`, type: 'text', content: event.content });
+      const hasStreamedText = finalBlocks.some(block => block.id === `${assistantId}_stream` && block.type === 'text' && block.content.trim());
+      if (event.content && !hasStreamedText) {
+        finalBlocks.push({ id: `${assistantId}_final`, type: 'text', content: event.content });
+      }
       msgs[idx] = { ...assistant, blocks: finalBlocks, status: 'done', partial: false };
       return { messages: msgs, loading: false, abortController: null };
     }

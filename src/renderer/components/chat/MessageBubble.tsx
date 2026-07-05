@@ -11,8 +11,11 @@ export default function MessageBubble({ message }: Props) {
     if (!message.content) return null;
     return (
       <div className="flex justify-end animate-fade-in">
-        <div className="max-w-[60%] bg-[var(--card)] border border-[var(--border)] rounded-2xl rounded-br-md px-4 py-2.5 text-sm text-[var(--foreground)]/80 shadow-sm">
+        <div className="group relative max-w-[60%] bg-[var(--card)] border border-[var(--border)] rounded-2xl rounded-br-md px-4 py-2.5 text-sm text-[var(--foreground)]/80 shadow-sm">
           <div className="whitespace-pre-wrap break-words">{message.content}</div>
+          <div className="absolute -left-7 top-1 opacity-0 transition group-hover:opacity-100">
+            <CopyButton content={message.content} title="复制消息" />
+          </div>
         </div>
       </div>
     );
@@ -37,9 +40,25 @@ function AssistantBubble({ message }: { message: Extract<ChatMessage, { role: 'a
     );
   }
 
+  const copyText = blocks.map(block => {
+    if (block.type === 'text' || block.type === 'thinking') return block.content;
+    if (block.type === 'tool_use') return `${block.toolName}\n${JSON.stringify(block.toolInput || {}, null, 2)}`;
+    if (block.type === 'tool_result') return `${block.toolName} result\n${block.toolOutput || ''}`;
+    return '';
+  }).filter(Boolean).join('\n\n');
+  const orderedBlocks = [
+    ...blocks.filter(block => block.type !== 'text'),
+    ...blocks.filter(block => block.type === 'text'),
+  ];
+
   return (
-    <div className="w-full space-y-0.5">
-      {blocks.map((block) => (
+    <div className="group/message relative w-full space-y-0.5">
+      {copyText && (
+        <div className="absolute -right-7 top-0 opacity-0 transition group-hover/message:opacity-100">
+          <CopyButton content={copyText} title="复制整条回复" />
+        </div>
+      )}
+      {orderedBlocks.map((block) => (
         <BlockRenderer key={block.id} block={block} messageStatus={status} hasResult={blocks.some(b => b.type === 'tool_result' && b.toolOutput === block.toolName)} />
       ))}
       {partial && blocks.length > 0 && (
@@ -82,6 +101,33 @@ function SpinnerRing({ size = 12 }: { size?: number }) {
   );
 }
 
+function CopyButton({ content, title = '复制' }: { content: string; title?: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(async (event: React.MouseEvent) => {
+    event.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch { /* clipboard denied */ }
+  }, [content]);
+
+  return (
+    <button
+      onClick={handleCopy}
+      className="grid h-6 w-6 place-items-center rounded text-[var(--muted-foreground)] transition hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+      title={copied ? '已复制' : title}
+    >
+      {copied ? (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      ) : (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      )}
+    </button>
+  );
+}
+
 /* ── Status indicator ── */
 
 function StatusIndicator({ status }: { status: ExecutionStatus }) {
@@ -107,6 +153,13 @@ function StatusIndicator({ status }: { status: ExecutionStatus }) {
           <span className="text-[11px] text-[var(--muted-foreground)]">正在执行工具...</span>
         </div>
       );
+    case 'post_tool':
+      return (
+        <div className="flex items-center gap-2 py-0.5">
+          <SpinnerRing size={12} />
+          <span className="text-[11px] text-[var(--muted-foreground)]">工具执行完成，正在整理最终回复...</span>
+        </div>
+      );
     case 'streaming':
       return (
         <span className="inline-block w-[7px] h-[15px] bg-[var(--foreground)]/60 cursor-blink rounded-[1px] ml-0.5 align-middle" />
@@ -121,33 +174,15 @@ function StatusIndicator({ status }: { status: ExecutionStatus }) {
 /* ── Text ── */
 
 function TextBlock({ content }: { content: string }) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(content);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
-    } catch { /* clipboard denied */ }
-  }, [content]);
-
   return (
     <div className="group w-full">
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0 text-sm text-[var(--foreground)] message-content">
           <MarkdownRenderer content={content} />
         </div>
-        <button
-          onClick={handleCopy}
-          className="shrink-0 mt-0.5 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-[var(--muted)] transition text-[var(--muted-foreground)]"
-          title="Copy"
-        >
-          {copied ? (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-          ) : (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-          )}
-        </button>
+        <div className="shrink-0 opacity-0 transition group-hover:opacity-100">
+          <CopyButton content={content} title="复制文本" />
+        </div>
       </div>
     </div>
   );
@@ -160,17 +195,22 @@ function ThinkingBlock({ content }: { content: string }) {
   if (!content) return null;
 
   return (
-    <div className="mb-1">
-      <button
-        onClick={() => setExpanded(v => !v)}
-        className="flex items-center gap-2 text-xs font-medium text-[var(--muted-foreground)] hover:text-[var(--foreground)]/60 transition-colors cursor-pointer select-none w-full text-left py-0.5"
-      >
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-          className="transition-transform"
-          style={{ transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
-        ><polyline points="9 18 15 12 9 6"/></svg>
-        思考
-      </button>
+    <div className="group mb-1">
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => setExpanded(v => !v)}
+          className="flex flex-1 items-center gap-2 text-xs font-medium text-[var(--muted-foreground)] hover:text-[var(--foreground)]/60 transition-colors cursor-pointer select-none text-left py-0.5"
+        >
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+            className="transition-transform"
+            style={{ transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
+          ><polyline points="9 18 15 12 9 6"/></svg>
+          思考
+        </button>
+        <div className="opacity-0 transition group-hover:opacity-100">
+          <CopyButton content={content} title="复制思考" />
+        </div>
+      </div>
       {expanded && (
         <div className="mt-1.5 whitespace-pre-wrap rounded-lg border border-[var(--border)] bg-[var(--muted)]/30 p-3 text-xs text-[var(--muted-foreground)] leading-relaxed">
           {content}
@@ -252,24 +292,30 @@ function ToolUseBlock({ name, input, isRunning }: { name: string; input?: Record
   const [expanded, setExpanded] = useState(false);
   const kind = classifyTool(name);
   const summary = buildToolSummary(name, input);
+  const copyText = `${name}\n${JSON.stringify(input || {}, null, 2)}`;
 
   return (
-    <div className="w-full py-0.5">
-      <button
-        onClick={() => setExpanded(v => !v)}
-        className="flex items-center gap-2 text-xs font-medium text-[var(--muted-foreground)] hover:text-[var(--foreground)]/60 transition-colors cursor-pointer w-full text-left"
-      >
-        <span className="shrink-0">
-          {isRunning ? <SpinnerRing size={13} /> : <ToolIcon kind={kind} />}
-        </span>
-        <span className="truncate">{isRunning ? summary : summary}</span>
-        {input && Object.keys(input).length > 0 && (
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-            className="shrink-0 transition-transform"
-            style={{ transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
-          ><polyline points="9 18 15 12 9 6"/></svg>
-        )}
-      </button>
+    <div className="group w-full py-0.5">
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => setExpanded(v => !v)}
+          className="flex min-w-0 flex-1 items-center gap-2 text-xs font-medium text-[var(--muted-foreground)] hover:text-[var(--foreground)]/60 transition-colors cursor-pointer text-left"
+        >
+          <span className="shrink-0">
+            {isRunning ? <SpinnerRing size={13} /> : <ToolIcon kind={kind} />}
+          </span>
+          <span className="truncate">{isRunning ? summary : summary}</span>
+          {input && Object.keys(input).length > 0 && (
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+              className="shrink-0 transition-transform"
+              style={{ transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
+            ><polyline points="9 18 15 12 9 6"/></svg>
+          )}
+        </button>
+        <div className="opacity-0 transition group-hover:opacity-100">
+          <CopyButton content={copyText} title="复制工具调用" />
+        </div>
+      </div>
       {expanded && input && Object.keys(input).length > 0 && (
         <div className="mt-1.5 ml-5">
           <pre className="max-h-52 overflow-auto rounded-md border border-[var(--border)] bg-[var(--muted)]/30 p-2 text-[11px] leading-relaxed text-[var(--muted-foreground)] whitespace-pre-wrap break-all font-mono">
@@ -288,17 +334,22 @@ function ToolResultBlock({ name, output }: { name: string; output?: string }) {
   if (!output) return null;
 
   return (
-    <div className="ml-0 py-0.5">
-      <button
-        onClick={() => setExpanded(v => !v)}
-        className="flex items-center gap-2 text-xs font-medium text-[var(--muted-foreground)] hover:text-[var(--foreground)]/60 transition-colors cursor-pointer"
-      >
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-          className="transition-transform"
-          style={{ transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
-        ><polyline points="9 18 15 12 9 6"/></svg>
-        <span>{name} result</span>
-      </button>
+    <div className="group ml-0 py-0.5">
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => setExpanded(v => !v)}
+          className="flex items-center gap-2 text-xs font-medium text-[var(--muted-foreground)] hover:text-[var(--foreground)]/60 transition-colors cursor-pointer"
+        >
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+            className="transition-transform"
+            style={{ transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
+          ><polyline points="9 18 15 12 9 6"/></svg>
+          <span>{name} result</span>
+        </button>
+        <div className="opacity-0 transition group-hover:opacity-100">
+          <CopyButton content={output} title="复制工具结果" />
+        </div>
+      </div>
       {expanded && (
         <div className="mt-1.5 ml-5 p-2.5 rounded-lg border border-[var(--border)] bg-[var(--muted)]/20 text-xs font-mono text-[var(--muted-foreground)] max-h-40 overflow-y-auto whitespace-pre-wrap leading-relaxed">
           {output.slice(0, 3000)}

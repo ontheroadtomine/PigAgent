@@ -3,16 +3,83 @@ import { ToolRegistry } from './tool-registry';
 import { AgentLoopOptions, AgentLoopResult, ChatMessageWire, ToolCallWire } from './types';
 
 const DEFAULT_MAX_TURNS = 20;
+const DEFAULT_MODEL_ROUND_TIMEOUT_MS = 90_000;
 
-async function requestChatCompletion(config: LlmApiConfig, apiKey: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<any> {
+class ModelRoundTimeoutError extends Error {
+  constructor() {
+    super(`Model round timed out after ${Math.round(DEFAULT_MODEL_ROUND_TIMEOUT_MS / 1000)} seconds`);
+    this.name = 'ModelRoundTimeoutError';
+  }
+}
+
+function createRoundSignal(parentSignal?: AbortSignal): { signal: AbortSignal; cleanup: () => void } {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new ModelRoundTimeoutError()), DEFAULT_MODEL_ROUND_TIMEOUT_MS);
+  const abortFromParent = () => controller.abort(parentSignal?.reason);
+  const cleanup = () => {
+    clearTimeout(timer);
+    parentSignal?.removeEventListener('abort', abortFromParent);
+  };
+
+  if (parentSignal?.aborted) {
+    abortFromParent();
+  } else {
+    parentSignal?.addEventListener('abort', abortFromParent, { once: true });
+  }
+
+  controller.signal.addEventListener('abort', () => {
+    cleanup();
+  }, { once: true });
+
+  return { signal: controller.signal, cleanup };
+}
+
+function isModelRoundTimeout(error: unknown): boolean {
+  if (error instanceof ModelRoundTimeoutError) return true;
+  const anyError = error as any;
+  if (anyError?.name === 'ModelRoundTimeoutError') return true;
+  if (anyError?.name === 'AbortError' && anyError?.message?.includes('timed out')) return true;
+  return false;
+}
+
+function buildFallbackSummary(toolCalls: AgentLoopResult['toolCalls']): string {
+  const successful = toolCalls.filter(call => call.ok);
+  if (!successful.length) return '模型本轮响应超时，且没有可确认完成的工具结果。请重试。';
+
+  const describeCall = (call: AgentLoopResult['toolCalls'][number]) => {
+    let pathValue = typeof call.args.path === 'string' ? call.args.path : '';
+    let actionValue = '';
+    try {
+      const parsed = call.output ? JSON.parse(call.output) : undefined;
+      const result = parsed?.result;
+      if (!pathValue && typeof result?.path === 'string') pathValue = result.path;
+      if (typeof result?.action === 'string') actionValue = result.action;
+    } catch { /* best effort */ }
+    const suffix = [actionValue, pathValue].filter(Boolean).join(' ');
+    return `- ${call.name}${suffix ? `：${suffix}` : ''}`;
+  };
+
+  const lines = [
+    '模型最终总结响应超时，但以下工具操作已经完成：',
+    '',
+    ...successful.map(describeCall),
+    '',
+    '你可以根据上面的工具结果继续操作，或重新发送“总结刚才的结果”。',
+  ];
+  return lines.join('\n');
+}
+
+function chatCompletionsUrl(config: LlmApiConfig): string {
   const baseUrl = config.baseUrl.replace(/\/+$/, '');
-  const url = baseUrl.endsWith('/chat/completions')
+  return baseUrl.endsWith('/chat/completions')
     ? baseUrl
     : baseUrl.endsWith('/v1')
       ? `${baseUrl}/chat/completions`
       : `${baseUrl}/v1/chat/completions`;
+}
 
-  const response = await fetch(url, {
+async function requestChatCompletion(config: LlmApiConfig, apiKey: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<any> {
+  const response = await fetch(chatCompletionsUrl(config), {
     method: 'POST',
     signal,
     headers: {
@@ -33,6 +100,94 @@ async function requestChatCompletion(config: LlmApiConfig, apiKey: string, body:
     throw new Error(`HTTP ${response.status}: ${detail}`);
   }
   return data;
+}
+
+async function requestChatCompletionStream(
+  config: LlmApiConfig,
+  apiKey: string,
+  body: Record<string, unknown>,
+  signal: AbortSignal | undefined,
+  onText: (delta: string) => void,
+): Promise<{ content: string; toolCalls: ToolCallWire[] }> {
+  const response = await fetch(chatCompletionsUrl(config), {
+    method: 'POST',
+    signal,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({ model: config.model, ...body, stream: true }),
+  });
+
+  if (!response.ok || !response.body) {
+    const text = await response.text();
+    let data: any = {};
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = { raw: text };
+    }
+    const detail = data?.error?.message || data?.message || text || response.statusText;
+    throw new Error(`HTTP ${response.status}: ${detail}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const toolCallMap = new Map<number, ToolCallWire>();
+  let buffer = '';
+  let content = '';
+
+  const consumeEvent = (rawEvent: string) => {
+    for (const line of rawEvent.split('\n')) {
+      if (!line.startsWith('data: ')) continue;
+      const rawData = line.slice(6).trim();
+      if (!rawData || rawData === '[DONE]') continue;
+      const data = JSON.parse(rawData);
+      const delta = data?.choices?.[0]?.delta;
+      if (!delta) continue;
+
+      if (typeof delta.content === 'string' && delta.content.length > 0) {
+        content += delta.content;
+        onText(delta.content);
+      }
+
+      for (const toolDelta of delta.tool_calls || []) {
+        const index = Number(toolDelta.index || 0);
+        const existing = toolCallMap.get(index) || {
+          id: toolDelta.id || `call_${index}`,
+          type: 'function',
+          function: { name: '', arguments: '' },
+        };
+        if (toolDelta.id) existing.id = toolDelta.id;
+        if (toolDelta.type) existing.type = toolDelta.type;
+        if (toolDelta.function?.name) existing.function.name += toolDelta.function.name;
+        if (toolDelta.function?.arguments) existing.function.arguments += toolDelta.function.arguments;
+        toolCallMap.set(index, existing);
+      }
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      const remaining = buffer.trim();
+      if (remaining) consumeEvent(remaining);
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+    const events = buffer.split('\n\n');
+    buffer = events.pop() || '';
+    for (const event of events) consumeEvent(event);
+  }
+
+  return {
+    content,
+    toolCalls: Array.from(toolCallMap.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([, call]) => call)
+      .filter(call => call.function.name),
+  };
 }
 
 function buildSystemPrompt(): string {
@@ -73,16 +228,36 @@ export class AgentLoop {
         status: turn === 0 ? 'thinking' : 'streaming',
         message: turn === 0 ? '分析任务' : '结合工具结果继续推理',
       });
-      const data = await requestChatCompletion(options.config, options.apiKey, {
-        messages,
-        tools: this.tools.schemas(),
-        tool_choice: 'auto',
-        temperature: 0.2,
-        stream: false,
-      }, options.signal);
+      let startedText = false;
+      let data: { content: string; toolCalls: ToolCallWire[] };
+      const round = createRoundSignal(options.signal);
+      try {
+        data = await requestChatCompletionStream(options.config, options.apiKey, {
+          messages,
+          tools: this.tools.schemas(),
+          tool_choice: 'auto',
+          temperature: 0.2,
+        }, round.signal, delta => {
+          if (!startedText) {
+            startedText = true;
+            options.onEvent?.({ type: 'text_start' });
+          }
+          options.onEvent?.({ type: 'text_delta', delta });
+        });
+      } catch (error) {
+        if (isModelRoundTimeout(error) && toolCallsLog.some(call => call.ok)) {
+          const fallback = buildFallbackSummary(toolCallsLog);
+          if (!startedText) options.onEvent?.({ type: 'text_start' });
+          options.onEvent?.({ type: 'text_delta', delta: fallback });
+          return { content: fallback, turns: turn + 1, toolCalls: toolCallsLog };
+        }
+        throw error;
+      } finally {
+        round.cleanup();
+      }
 
-      const message = data?.choices?.[0]?.message;
-      const toolCalls: ToolCallWire[] = message?.tool_calls || [];
+      const message = { content: data.content };
+      const toolCalls: ToolCallWire[] = data.toolCalls || [];
 
       if (toolCalls.length === 0) {
         const content = message?.content?.trim() || '';
@@ -100,13 +275,15 @@ export class AgentLoop {
         options.onEvent?.({ type: 'tool_start', name: call.function.name, args });
         options.onEvent?.({ type: 'status', status: 'executing', message: `执行 ${call.function.name}` });
         const result = await this.tools.execute(call.function.name, args, { cwd: options.cwd });
-        toolCallsLog.push({ name: call.function.name, args, ok: result.ok });
+        const output = JSON.stringify(result);
+        toolCallsLog.push({ name: call.function.name, args, ok: result.ok, output });
         options.onEvent?.({
           type: 'tool_result',
           name: call.function.name,
           ok: result.ok,
-          output: JSON.stringify(result),
+          output,
         });
+        options.onEvent?.({ type: 'status', status: 'post_tool', message: '工具执行完成，正在整理最终回复' });
         messages.push({
           role: 'tool',
           tool_call_id: call.id,

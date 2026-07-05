@@ -1,181 +1,112 @@
 # PigAgent Agent Loop 核心实现文档
 
-> 本文档详细梳理 PigAgent 的 Agent Loop（智能体循环）核心实现逻辑，涵盖架构、数据流、工具系统、事件模型、多 Provider 适配以及完整的调用链路。
-
----
-
-## 目录
-
-1. [架构总览](#1-架构总览)
-2. [核心循环：AgentLoop](#2-核心循环agentloop)
-3. [工具系统：ToolRegistry](#3-工具系统toolregistry)
-4. [工具实现清单](#4-工具实现清单)
-5. [Provider 适配层](#5-provider-适配层)
-6. [事件模型与流式通信](#6-事件模型与流式通信)
-7. [完整调用链路](#7-完整调用链路)
-8. [安全与边界控制](#8-安全与边界控制)
-9. [流程图](#9-流程图)
+> 版本: 2.0  
+> 最后更新: 2025-07-04  
+> 核心文件: `src/main/agent-core/loop.ts`, `src/main/agent-core/types.ts`, `src/main/agent-core/tool-registry.ts`, `src/main/agent-core/default-tools.ts`
 
 ---
 
 ## 1. 架构总览
 
-PigAgent 的 Agent Loop 采用 **"宿主拥有循环"（Host-Owned Loop）** 架构，即应用程序（而非模型）控制整个推理-工具-观察的循环过程。这与 Codex CLI 的设计理念一致。
+PigAgent 的 Agent Loop 是一个 **ReAct (Reasoning + Acting)** 模式的迭代执行引擎。它让 LLM 在每一轮中推理、调用工具、观察结果，直到任务完成。
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        PigAgent Agent Loop                          │
-│                                                                     │
-│  ┌──────────┐    ┌──────────────┐    ┌──────────────────────────┐  │
-│  │  User     │───▶│  AgentLoop   │───▶│  LLM API (DeepSeek/     │  │
-│  │  Prompt   │    │  (loop.ts)   │    │  OpenAI-compatible)     │  │
-│  └──────────┘    └──────┬───────┘    └────────────┬─────────────┘  │
-│                         │                          │                │
-│                         │  工具调用                  │  tool_calls    │
-│                         ▼                          │                │
-│                  ┌──────────────┐                  │                │
-│                  │ ToolRegistry  │◄─────────────────┘                │
-│                  │ (注册/调度)   │                                   │
-│                  └──────┬───────┘                                   │
-│                         │                                           │
-│          ┌──────────────┼──────────────┐                            │
-│          ▼              ▼              ▼                            │
-│   ┌──────────┐  ┌────────────┐  ┌──────────┐                       │
-│   │ Workspace│  │ Shell/     │  │ Web/     │                       │
-│   │ Tools    │  │ Patch      │  │ Weather  │                       │
-│   └──────────┘  └────────────┘  └──────────┘                       │
-│                                                                     │
-│  结果 → 追加到消息历史 → 下一轮推理 → ... → 最终回答                │
-└─────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          PigAgent 整体架构                                    │
+│                                                                             │
+│  ┌──────────┐    ┌──────────────────┐    ┌──────────────────────────────┐   │
+│  │ Renderer │◄──►│   IPC / Bridge   │◄──►│        Agent Loop            │   │
+│  │ (React)  │    │                  │    │                              │   │
+│  │          │    │ ipc-handlers.ts  │    │  ┌────────────────────────┐  │   │
+│  │ Zustand  │    │ dev-bridge.ts    │    │  │   AgentLoop (loop.ts)  │  │   │
+│  │ Store    │    │ llm-api.ts       │    │  │                        │  │   │
+│  └──────────┘    └──────────────────┘    │  │  ┌──────────────────┐  │  │   │
+│                                           │  │  │  ToolRegistry   │  │  │   │
+│                                           │  │  │  ┌────────────┐ │  │  │   │
+│                                           │  │  │  │ workspace │ │  │  │   │
+│                                           │  │  │  │ shell     │ │  │  │   │
+│                                           │  │  │  │ web_fetch │ │  │  │   │
+│                                           │  │  │  │ weather   │ │  │  │   │
+│                                           │  │  │  │ patch     │ │  │  │   │
+│                                           │  │  │  └────────────┘ │  │  │   │
+│                                           │  │  └──────────────────┘  │  │   │
+│                                           │  └────────────────────────┘  │   │
+│                                           └──────────────────────────────┘   │
+│                                                    │                         │
+│                                                    ▼                         │
+│                                           ┌──────────────────────────────┐   │
+│                                           │     LLM API (OpenAI兼容)      │   │
+│                                           │  POST /v1/chat/completions    │   │
+│                                           │  stream: true, tool_choice:   │   │
+│                                           │  auto                         │   │
+│                                           └──────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
-
-### 两种运行模式
-
-PigAgent 支持两种 Agent 执行路径：
-
-| 模式 | 描述 | 适用场景 |
-|------|------|----------|
-| **LLM API 模式** | 通过 `AgentLoop` 调用 DeepSeek/OpenAI-compatible API，宿主控制循环 | 默认模式，Codex 风格 |
-| **CLI Adapter 模式** | 通过 `AgentRuntime` 包装外部 CLI Agent（Claude Code, Codex CLI 等） | 使用第三方 Agent 工具 |
-
-本文档重点覆盖 **LLM API 模式** 的 Agent Loop 实现。
 
 ---
 
-## 2. 核心循环：AgentLoop
+## 2. 核心数据结构
 
-### 2.1 文件位置
-
-`src/main/agent-core/loop.ts`
-
-### 2.2 核心接口
+### 2.1 消息类型 (`ChatMessageWire`)
 
 ```typescript
-class AgentLoop {
-  constructor(private readonly tools: ToolRegistry) {}
+type ChatRole = 'system' | 'user' | 'assistant' | 'tool';
 
-  async run(options: AgentLoopOptions): Promise<AgentLoopResult>
+interface ChatMessageWire {
+  role: ChatRole;
+  content?: string | null;
+  tool_call_id?: string;       // 用于 tool 角色的消息，关联到具体的 tool_call
+  tool_calls?: ToolCallWire[]; // assistant 消息中的工具调用列表
 }
 ```
 
-### 2.3 输入参数（AgentLoopOptions）
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `config` | `LlmApiConfig` | LLM API 配置（baseUrl, model 等） |
-| `apiKey` | `string` | API 密钥 |
-| `prompt` | `string` | 用户输入的提示词 |
-| `cwd` | `string` | 工作目录 |
-| `signal?` | `AbortSignal` | 中止信号 |
-| `maxTurns?` | `number` | 最大轮次（默认 20） |
-| `onEvent?` | `(event: AgentLoopEvent) => void` | 事件回调（用于流式 UI 更新） |
-
-### 2.4 输出结果（AgentLoopResult）
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `content` | `string` | 最终回答文本 |
-| `turns` | `number` | 实际消耗的轮次 |
-| `toolCalls` | `Array<{name, args, ok}>` | 所有工具调用记录 |
-
-### 2.5 循环逻辑（伪代码）
-
-```
-function run(options):
-  1. 构建系统提示词（System Prompt）
-  2. 初始化消息历史: [system, user]
-  3. FOR turn = 0 TO maxTurns:
-     a. 发送事件: { type: 'status', status: 'thinking' }
-     b. 调用 LLM Chat Completions API，传入:
-        - messages（完整历史）
-        - tools（已注册工具的 schema）
-        - tool_choice: 'auto'
-     c. 解析响应中的 tool_calls
-     d. IF 没有 tool_calls:
-        - 返回最终回答（content）
-     e. 将 assistant 消息（含 tool_calls）追加到历史
-     f. FOR EACH tool_call:
-        - 发送事件: { type: 'tool_start', name, args }
-        - 执行工具: tools.execute(name, args)
-        - 发送事件: { type: 'tool_result', name, ok, output }
-        - 将 tool 结果追加到消息历史
-     g. 继续下一轮循环
-  4. 达到最大轮次 → 抛出错误
-```
-
-### 2.6 系统提示词
-
-系统提示词在 `buildSystemPrompt()` 中构建，定义了 PigAgent 的行为准则：
-
-- 身份：Codex 风格的桌面软件 Agent
-- 行为模式：推理 → 调用工具 → 观察结果 → 继续，直到任务完成
-- 工具使用偏好：先读后写，批量读取，聚焦命令
-- 输出要求：简洁回答，失败时说明原因
-
-### 2.7 LLM API 调用
-
-`requestChatCompletion()` 函数封装了对 OpenAI-compatible Chat Completions API 的调用：
-
-- 自动拼接 baseUrl（支持 `/v1/chat/completions` 或裸 URL）
-- 支持 AbortSignal 中止
-- 错误处理：解析 HTTP 错误和 API 错误消息
-- 默认参数：`temperature: 0.2`, `stream: false`
-
----
-
-## 3. 工具系统：ToolRegistry
-
-### 3.1 文件位置
-
-`src/main/agent-core/tool-registry.ts`
-
-### 3.2 核心设计
+### 2.2 工具调用 (`ToolCallWire`)
 
 ```typescript
-class ToolRegistry {
-  private tools = new Map<string, AgentTool>();
-
-  register(tool: AgentTool): void;      // 注册工具
-  schemas(): AgentToolSchema[];         // 获取所有工具的 OpenAI function-calling schema
-  execute(name, args, context): Promise<AgentToolResult>;  // 执行工具
+interface ToolCallWire {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string;  // JSON 字符串，需要 parseArgs() 解析
+  };
 }
 ```
 
-### 3.3 工具接口（AgentTool）
+### 2.3 Agent Loop 选项 (`AgentLoopOptions`)
+
+```typescript
+interface AgentLoopOptions {
+  config: LlmApiConfig;           // LLM API 配置（baseUrl, model 等）
+  apiKey: string;                 // API 密钥
+  prompt: string;                 // 用户输入的提示词
+  cwd: string;                    // 工作目录
+  signal?: AbortSignal;           // 取消信号（父级）
+  maxTurns?: number;              // 最大轮次（默认 20）
+  onEvent?: (event: AgentLoopEvent) => void;  // 事件回调
+}
+```
+
+### 2.4 事件类型 (`AgentLoopEvent`)
+
+```typescript
+type AgentLoopEvent =
+  | { type: 'status'; status: 'thinking' | 'executing' | 'post_tool' | 'streaming'; message?: string }
+  | { type: 'tool_start'; name: string; args: Record<string, unknown> }
+  | { type: 'tool_result'; name: string; ok: boolean; output: string }
+  | { type: 'text_start' }
+  | { type: 'text_delta'; delta: string };
+```
+
+### 2.5 工具接口 (`AgentTool`)
 
 ```typescript
 interface AgentTool {
-  name: string;                          // 工具名称
-  schema: AgentToolSchema;               // OpenAI function-calling schema
-  run(args, context): Promise<unknown>;  // 执行逻辑
+  name: string;
+  schema: AgentToolSchema;  // OpenAI function calling schema
+  run(args: Record<string, unknown>, context: AgentToolContext): Promise<unknown>;
 }
-```
 
-### 3.4 工具 Schema 格式
-
-遵循 OpenAI function calling 规范：
-
-```typescript
 interface AgentToolSchema {
   type: 'function';
   function: {
@@ -184,318 +115,385 @@ interface AgentToolSchema {
     parameters: Record<string, unknown>;  // JSON Schema
   };
 }
-```
 
-### 3.5 执行上下文（AgentToolContext）
-
-```typescript
 interface AgentToolContext {
-  cwd: string;  // 当前工作目录
+  cwd: string;
 }
-```
 
-### 3.6 执行结果（AgentToolResult）
-
-```typescript
 interface AgentToolResult {
   ok: boolean;
-  result?: unknown;   // 成功时的返回值
+  result?: unknown;   // 成功时的数据
   error?: string;     // 失败时的错误信息
 }
 ```
 
-### 3.7 注册流程
+---
 
-`createDefaultToolRegistry()` 在 `src/main/agent-core/default-tools.ts` 中创建默认工具集：
+## 3. Agent Loop 主流程 (`loop.ts`)
+
+### 3.1 完整流程图
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          Agent Loop 主流程                                   │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │  run(options) 入口                                                   │    │
+│  │  - 构建 system prompt（PigAgent 身份 + 工具使用指南）                  │    │
+│  │  - 将 user prompt 加入 messages                                      │    │
+│  │  - 初始化 toolCallsLog = []                                          │    │
+│  └──────────────────────┬──────────────────────────────────────────────┘    │
+│                         │                                                  │
+│                         ▼                                                  │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │  for turn = 0; turn < maxTurns (20); turn++                         │    │
+│  │  ┌───────────────────────────────────────────────────────────────┐  │    │
+│  │  │ ① 发送 status 事件                                             │  │    │
+│  │  │   turn===0 → 'thinking' / 否则 → 'streaming'                   │  │    │
+│  │  │                                                               │  │    │
+│  │  │ ② 创建 Round Signal                                            │  │    │
+│  │  │   - 90s 超时定时器                                             │  │    │
+│  │  │   - 绑定父级 AbortSignal                                       │  │    │
+│  │  │   - 返回 { signal, cleanup }                                   │  │    │
+│  │  │                                                               │  │    │
+│  │  │ ③ requestChatCompletionStream()                               │  │    │
+│  │  │   ├── POST {baseUrl}/v1/chat/completions                       │  │    │
+│  │  │   ├── body: { messages, tools, tool_choice: 'auto',            │  │    │
+│  │  │   │         temperature: 0.2, stream: true }                   │  │    │
+│  │  │   ├── SSE 流解析:                                              │  │    │
+│  │  │   │   ├── delta.content → onText() → text_delta 事件           │  │    │
+│  │  │   │   └── delta.tool_calls → toolCallMap[index] 累积           │  │    │
+│  │  │   └── 返回 { content, toolCalls }                              │  │    │
+│  │  │                                                               │  │    │
+│  │  │ ④ 检查 toolCalls.length === 0 ?                               │  │    │
+│  │  │   ├── YES → 返回 { content, turns, toolCallsLog } ✅           │  │    │
+│  │  │   └── NO  → 继续                                              │  │    │
+│  │  │                                                               │  │    │
+│  │  │ ⑤ 将 assistant message (含 tool_calls) 加入 messages           │  │    │
+│  │  │                                                               │  │    │
+│  │  │ ⑥ 遍历每个 tool_call:                                         │  │    │
+│  │  │   ├── parseArgs() → JSON.parse(arguments)                      │  │    │
+│  │  │   ├── 发送 tool_start 事件                                     │  │    │
+│  │  │   ├── 发送 status: 'executing' 事件                            │  │    │
+│  │  │   ├── tools.execute(name, args, { cwd })                       │  │    │
+│  │  │   ├── 记录 toolCallsLog.push({ name, args, ok, output })       │  │    │
+│  │  │   ├── 发送 tool_result 事件                                    │  │    │
+│  │  │   ├── 发送 status: 'post_tool' 事件                            │  │    │
+│  │  │   └── 将 tool role message 加入 messages                       │  │    │
+│  │  └──────────────────────┬────────────────────────────────────────┘  │    │
+│  │                         │                                            │    │
+│  │                         ▼                                            │    │
+│  │  ┌───────────────────────────────────────────────────────────────┐  │    │
+│  │  │ ⑦ 回到循环顶部 → 下一轮 (turn++)                               │  │    │
+│  │  └───────────────────────────────────────────────────────────────┘  │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │ 超时处理:                                                           │    │
+│  │  - 如果模型单轮超时 (90s) 且已有成功的工具调用                         │    │
+│  │    → buildFallbackSummary() 生成结构化 fallback 总结并返回            │    │
+│  │  - 否则抛出 ModelRoundTimeoutError                                   │    │
+│  │                                                                     │    │
+│  │ 达到最大轮次:                                                        │    │
+│  │  - 抛出 Error("Agent loop reached max turns (N).")                  │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 3.2 详细步骤说明
+
+#### 步骤 1: 初始化
 
 ```typescript
-export function createDefaultToolRegistry(): ToolRegistry {
-  const registry = new ToolRegistry();
-  registry.register(weatherCurrentTool);   // 天气查询
-  registry.register(listDirTool);          // 列出目录
-  registry.register(workspaceFilesTool);   // 列出工作区文件
-  registry.register(workspaceSearchTool);  // 搜索工作区文本
-  registry.register(fileReadTool);         // 读取文件
-  registry.register(fileReadManyTool);     // 批量读取文件
-  registry.register(fileWriteTool);        // 写入文件
-  registry.register(shellExecTool);        // 执行 shell 命令
-  registry.register(webFetchTool);         // 获取网页内容
-  registry.register(applyPatchTool);       // 应用补丁
-  return registry;
+const messages: ChatMessageWire[] = [
+  { role: 'system', content: buildSystemPrompt() },
+  { role: 'user', content: options.prompt },
+];
+```
+
+`buildSystemPrompt()` 构建的 system prompt 包含：
+- PigAgent 身份声明（"You are PigAgent, a Codex-style desktop software agent."）
+- 工具使用指南（先看再改、批量读取、聚焦命令、不暴露密钥）
+- 工具列表说明（weather_current, web_fetch, workspace_files 等）
+
+#### 步骤 2: 请求 LLM (流式)
+
+`requestChatCompletionStream()` 的核心逻辑：
+
+1. **构建 URL**: 自动拼接 `{baseUrl}/v1/chat/completions`
+2. **发送请求**: POST 请求，`stream: true`
+3. **SSE 解析**: 逐行读取 `data: {...}` 事件
+   - `delta.content` → 实时通过 `onText()` 回调发送 `text_delta` 事件
+   - `delta.tool_calls` → 按 `index` 累积到 `toolCallMap`，处理分块传输
+4. **返回**: `{ content: string, toolCalls: ToolCallWire[] }`
+
+#### 步骤 3: 判断是否完成
+
+```typescript
+if (toolCalls.length === 0) {
+  const content = message?.content?.trim() || '';
+  return { content, turns: turn + 1, toolCalls: toolCallsLog };
+}
+```
+
+- 模型返回纯文本（无工具调用）→ 任务完成
+- 模型返回工具调用 → 进入工具执行阶段
+
+#### 步骤 4: 执行工具
+
+```typescript
+for (const call of toolCalls) {
+  const args = parseArgs(call.function.arguments);
+  options.onEvent?.({ type: 'tool_start', name: call.function.name, args });
+  options.onEvent?.({ type: 'status', status: 'executing', message: `执行 ${call.function.name}` });
+  const result = await this.tools.execute(call.function.name, args, { cwd: options.cwd });
+  const output = JSON.stringify(result);
+  toolCallsLog.push({ name: call.function.name, args, ok: result.ok, output });
+  options.onEvent?.({ type: 'tool_result', name: call.function.name, ok: result.ok, output });
+  options.onEvent?.({ type: 'status', status: 'post_tool', message: '工具执行完成，正在整理最终回复' });
+  messages.push({
+    role: 'tool',
+    tool_call_id: call.id,
+    content: JSON.stringify(result),
+  });
+}
+```
+
+#### 步骤 5: 下一轮
+
+工具结果作为 `tool` 角色消息加入对话历史，LLM 在下一轮看到结果后继续推理。
+
+### 3.3 超时与错误处理
+
+| 场景 | 处理方式 |
+|------|----------|
+| **单轮超时 (90s)** | 如果已有成功的工具调用 → 生成 fallback 总结并返回；否则抛出异常 |
+| **父级 AbortSignal 触发** | 立即中止当前轮次 |
+| **HTTP 错误** | 抛出包含状态码和错误详情的异常 |
+| **达到最大轮次 (20)** | 抛出 Error |
+
+### 3.4 Fallback 总结机制
+
+当模型在工具执行后超时（无法生成最终总结），系统自动构建一个结构化的 fallback 消息：
+
+```typescript
+function buildFallbackSummary(toolCalls): string {
+  const successful = toolCalls.filter(call => call.ok);
+  if (!successful.length) return '模型本轮响应超时，且没有可确认完成的工具结果。请重试。';
+  
+  // 构建格式：
+  // 模型最终总结响应超时，但以下工具操作已经完成：
+  //
+  // - workspace_files
+  // - file_read_many：src/main/agent-core/loop.ts
+  // - shell_exec
+  //
+  // 你可以根据上面的工具结果继续操作，或重新发送"总结刚才的结果"。
+}
+```
+
+### 3.5 Round Signal 机制
+
+```typescript
+function createRoundSignal(parentSignal?: AbortSignal): { signal: AbortSignal; cleanup: () => void } {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new ModelRoundTimeoutError()), 90_000);
+  // 绑定父级 AbortSignal
+  // 自动清理定时器和事件监听
+  return { signal: controller.signal, cleanup };
+}
+```
+
+每轮请求独立创建 Round Signal，确保：
+- 单轮超时不影响其他轮次
+- 父级取消信号可以传播到当前轮次
+- 请求完成后自动清理资源
+
+---
+
+## 4. 工具注册与执行 (`tool-registry.ts`)
+
+### 4.1 ToolRegistry 类
+
+```typescript
+class ToolRegistry {
+  private tools = new Map<string, AgentTool>();
+
+  register(tool: AgentTool): void {
+    this.tools.set(tool.name, tool);
+  }
+
+  schemas(): AgentToolSchema[] {
+    return Array.from(this.tools.values()).map(tool => tool.schema);
+  }
+
+  async execute(name: string, args: Record<string, unknown>, context: AgentToolContext): Promise<AgentToolResult> {
+    const tool = this.tools.get(name);
+    if (!tool) return { ok: false, error: `Unknown tool: ${name}` };
+    try {
+      const result = await tool.run(args, context);
+      return { ok: true, result };
+    } catch (error: any) {
+      return { ok: false, error: error?.message || String(error) };
+    }
+  }
+}
+```
+
+### 4.2 默认工具列表 (`default-tools.ts`)
+
+| 工具名 | 描述 | 源文件 | 参数 |
+|--------|------|--------|------|
+| `weather_current` | 获取实时天气（Open-Meteo API） | `tools/weather.ts` | `location` (必填) |
+| `workspace_list` | 列出工作区目录 | `tools/workspace.ts` | `path` (可选) |
+| `workspace_files` | 列出工作区文件（排除依赖） | `tools/workspace.ts` | `limit` (可选, 默认300) |
+| `workspace_search` | 使用 ripgrep 搜索文本 | `tools/workspace.ts` | `pattern` (必填), `path`, `limit` |
+| `file_read` | 读取单个文件（截断至60KB） | `tools/workspace.ts` | `path` (必填) |
+| `file_read_many` | 批量读取多个文件（最多20个，总80KB） | `tools/workspace.ts` | `paths` (必填, 数组) |
+| `file_write` | 创建/覆盖文件 | `tools/workspace.ts` | `path` (必填), `content` (必填) |
+| `shell_exec` | 执行 shell 命令 | `tools/shell.ts` | `command` (必填), `timeoutMs` |
+| `web_fetch` | 获取 HTTP URL 内容（截断至50KB） | `tools/web.ts` | `url` (必填) |
+| `apply_patch` | 应用 unified diff patch | `tools/patch.ts` | `patch` (必填) |
+
+### 4.3 工具执行结果格式
+
+```typescript
+interface AgentToolResult {
+  ok: boolean;
+  result?: unknown;   // 成功时的数据
+  error?: string;     // 失败时的错误信息
 }
 ```
 
 ---
 
-## 4. 工具实现清单
+## 5. 流式 SSE 解析 (`requestChatCompletionStream`)
 
-### 4.1 工作区工具（`src/main/agent-core/tools/workspace.ts`）
+### 5.1 SSE 解析流程
 
-| 工具名 | 功能 | 关键参数 |
-|--------|------|----------|
-| `workspace_list` | 列出目录内容 | `path`（相对路径，默认根目录） |
-| `workspace_files` | 快速列出工作区文件（排除 node_modules/dist/.git） | `limit`（最多 1000，默认 300） |
-| `workspace_search` | 使用 ripgrep 搜索文本 | `pattern`（必填），`path`，`limit` |
-| `file_read` | 读取单个文件（大文件截断） | `path`（必填） |
-| `file_read_many` | 批量读取文件（最多 20 个，总计 80KB） | `paths`（必填，数组） |
-| `file_write` | 创建或覆盖文件 | `path`（必填），`content`（必填） |
+```
+LLM API Response (SSE stream)
+│
+├── data: {"choices":[{"delta":{"content":"我来分析"}}]}
+│   → onText("我来分析") → text_delta 事件
+│
+├── data: {"choices":[{"delta":{"content":"这个任务"}}]}
+│   → onText("这个任务") → text_delta 事件
+│
+├── data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"workspace_files","arguments":"{\"limit\":300}"}}]}}]}
+│   → toolCallMap[0] = { id: "call_1", function: { name: "workspace_files", arguments: '{"limit":300}' } }
+│
+├── data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"}"}}]}}]}
+│   → toolCallMap[0].function.arguments += "}"
+│
+├── data: [DONE]
+│   → 流结束
+│
+└── 返回 { content: "完整文本", toolCalls: [排序后的工具调用列表] }
+```
 
-**安全机制**：`resolveWorkspacePath()` 确保所有路径操作不会逃逸出工作区目录。
+### 5.2 关键实现细节
 
-### 4.2 Shell 执行工具（`src/main/agent-core/tools/shell.ts`）
+```typescript
+// 按 index 排序去重
+Array.from(toolCallMap.entries())
+  .sort(([a], [b]) => a - b)
+  .map(([, call]) => call)
+  .filter(call => call.function.name)  // 过滤掉没有函数名的空调用
+```
 
-| 工具名 | 功能 | 关键参数 |
-|--------|------|----------|
-| `shell_exec` | 执行 shell 命令 | `command`（必填），`timeoutMs`（默认 60s，最大 180s） |
-
-**安全机制**：
-- 拒绝执行明显破坏性命令（`rm -rf /`, `mkfs`, `diskutil erase`, `shutdown`, `reboot`）
-- 超时自动 SIGTERM → 2 秒后 SIGKILL
-- 输出截断（stdout/stderr 各 30KB）
-
-### 4.3 补丁工具（`src/main/agent-core/tools/patch.ts`）
-
-| 工具名 | 功能 | 关键参数 |
-|--------|------|----------|
-| `apply_patch` | 应用 unified diff 补丁 | `patch`（必填） |
-
-通过 `git apply --whitespace=nowarn` 实现，支持标准 unified diff 格式。
-
-### 4.4 网络工具（`src/main/agent-core/tools/web.ts`）
-
-| 工具名 | 功能 | 关键参数 |
-|--------|------|----------|
-| `web_fetch` | 获取 HTTP/HTTPS URL 内容 | `url`（必填） |
-
-输出截断 50KB，仅支持 http/https 协议。
-
-### 4.5 天气工具（`src/main/agent-core/tools/weather.ts`）
-
-| 工具名 | 功能 | 关键参数 |
-|--------|------|----------|
-| `weather_current` | 查询实时天气 | `location`（必填，城市名） |
-
-使用 Open-Meteo API（免费，无需 API Key）：
-1. 地理编码：`geocoding-api.open-meteo.com`
-2. 天气预报：`api.open-meteo.com/v1/forecast`
-
-返回：位置信息、当前温度/体感温度/湿度/降水/风速、今日预报。
-
-### 4.6 共享工具函数（`src/main/agent-core/tools/shared.ts`）
-
-| 函数 | 功能 |
-|------|------|
-| `resolveWorkspacePath(cwd, inputPath)` | 解析并验证路径不逃逸工作区 |
-| `pathExists(filePath)` | 检查文件是否存在 |
-| `truncateText(text, maxChars)` | 截断文本并添加截断标记 |
+- 使用 `Map<number, ToolCallWire>` 按 index 存储
+- 支持分块传输的 tool_calls（arguments 可能分多次到达）
+- 自动处理 `[DONE]` 结束标记
+- 缓冲区处理跨 chunk 的 SSE 事件边界
 
 ---
 
-## 5. Provider 适配层
+## 6. 调用链路
 
-### 5.1 LLM API Provider
+### 6.1 通过 IPC (Electron 模式)
 
-通过 `src/main/llm-api.ts` 中的 `chatWithLlmApi()` 和 `streamChatWithLlmApi()` 暴露。
-
-```typescript
-// 非流式调用
-async function chatWithLlmApi(config, prompt, cwd): Promise<LlmApiChatResult>
-
-// 流式调用（带事件回调）
-async function streamChatWithLlmApi(config, prompt, cwd, emit): Promise<void>
+```
+Renderer (app-store.ts)
+  → window.pigagent.chatLlmApi(config, prompt, cwd)
+    → ipcMain.handle(IPC.LLM_API_CHAT)
+      → chatWithLlmApi() [llm-api.ts]
+        → resolveApiKey() 解析 API 密钥
+        → new AgentLoop(createDefaultToolRegistry())
+          → loop.run({ config, apiKey, prompt, cwd, signal, onEvent })
+            → 多轮循环...
+        → 返回 LlmApiChatResult { ok, content, toolCalls, latencyMs }
 ```
 
-**API Key 解析逻辑**（`resolveApiKey()`）：
-1. 优先使用配置中的 `apiKey`
-2. 其次从 `envFilePath` 指定的 .env 文件中读取
-3. 最后从环境变量中读取（`DEEPSEEK_API_KEY` 等）
+### 6.2 通过 Bridge (浏览器开发模式)
 
-### 5.2 CLI Agent Provider（旧架构）
+```
+Renderer (app-store.ts)
+  → fetch(`${BRIDGE_URL}/llm-api/stream`, { body: { config, prompt, cwd } })
+    → streamChatWithLlmApi() [llm-api.ts]
+      → resolveApiKey() 解析 API 密钥
+      → new AgentLoop(createDefaultToolRegistry())
+        → loop.run({ config, apiKey, prompt, cwd, signal, onEvent })
+          → onEvent(event) → emit(event) → SSE data → Renderer
+```
 
-通过 `src/main/agent-runtime/` 实现，支持：
+### 6.3 流式事件传递
 
-| Provider | 协议 | Adapter 文件 |
-|----------|------|-------------|
-| Claude Code | stream-json | `adapters/claude.ts` |
-| Codex CLI | exec | `adapters/codex.ts` |
-| Hermes | ACP (JSON-RPC 2.0) | `adapters/acp.ts` |
-| Kimi | ACP (JSON-RPC 2.0) | `adapters/acp.ts` |
-| Kiro | ACP (JSON-RPC 2.0) | `adapters/acp.ts` |
-| OpenCode | exec | `adapters/codex.ts` |
+```
+AgentLoop.onEvent(event)
+  → streamChatWithLlmApi emit(event)
+    → SSE data: { type: 'status', status: 'thinking' }
+      → Renderer SSE 解析
+        → updateAssistantFromLlmEvent(assistantId, event)
+          → Zustand store set() → React re-render
+```
 
-### 5.3 Dev Bridge（浏览器预览模式）
+### 6.4 完整调用链路图
 
-`src/main/dev-bridge.ts` 提供 HTTP 服务（端口 9876），支持：
-
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/providers` | GET | 扫描可用 CLI Agent |
-| `/execute` | POST | 执行 CLI Agent（SSE 流式返回） |
-| `/llm-api/test` | POST | 测试 LLM API 连接 |
-| `/llm-api/chat` | POST | 非流式 LLM API 调用 |
-| `/llm-api/stream` | POST | 流式 LLM API 调用（SSE） |
+```
+┌──────────────┐     ┌──────────────┐     ┌──────────────────┐     ┌──────────────┐
+│  Renderer    │────►│  IPC/Bridge  │────►│  llm-api.ts      │────►│  AgentLoop   │
+│  (React)     │     │              │     │                  │     │  (loop.ts)   │
+│              │     │ ipc-handlers │     │ chatWithLlmApi() │     │              │
+│ Zustand Store│     │ dev-bridge   │     │ streamChatWith   │     │ run()        │
+│              │     │              │     │ LlmApi()         │     │              │
+└──────────────┘     └──────────────┘     └──────────────────┘     └──────┬───────┘
+                                                                         │
+                                                                         ▼
+                                                               ┌──────────────────┐
+                                                               │  ToolRegistry    │
+                                                               │  (tool-registry) │
+                                                               │                  │
+                                                               │ execute(name,    │
+                                                               │   args, context) │
+                                                               └──────┬───────────┘
+                                                                      │
+                                              ┌───────────────────────┼───────────────────────┐
+                                              ▼                       ▼                       ▼
+                                   ┌──────────────────┐   ┌──────────────────┐   ┌──────────────────┐
+                                   │  workspace.ts    │   │  shell.ts        │   │  web.ts          │
+                                   │  file_read       │   │  shell_exec      │   │  web_fetch       │
+                                   │  file_write      │   │                  │   │                  │
+                                   │  workspace_files │   │ spawn()          │   │ fetch()          │
+                                   │  workspace_search│   └──────────────────┘   └──────────────────┘
+                                   └──────────────────┘
+```
 
 ---
 
-## 6. 事件模型与流式通信
+## 7. 安全机制
 
-### 6.1 AgentLoop 事件类型
-
-```typescript
-type AgentLoopEvent =
-  | { type: 'status'; status: 'thinking' | 'executing' | 'streaming'; message?: string }
-  | { type: 'tool_start'; name: string; args: Record<string, unknown> }
-  | { type: 'tool_result'; name: string; ok: boolean; output: string };
-```
-
-### 6.2 LLM API 事件类型
+### 7.1 Shell 命令安全
 
 ```typescript
-type LlmApiChatEvent =
-  | { type: 'status'; status: ExecutionStatus; message?: string }
-  | { type: 'tool_start'; name: string; args: Record<string, unknown> }
-  | { type: 'tool_result'; name: string; ok: boolean; output: string }
-  | { type: 'final'; content: string; latencyMs: number }
-  | { type: 'error'; error: string };
-```
-
-### 6.3 流式通信路径
-
-```
-AgentLoop (主进程)
-    │
-    ├─ onEvent 回调
-    │     │
-    │     ▼
-    ├─ streamChatWithLlmApi()
-    │     │
-    │     ▼
-    ├─ emit(event) → SSE / IPC
-    │     │
-    │     ▼
-    └─ Renderer (app-store.ts)
-          │
-          ├─ updateAssistantFromLlmEvent()
-          │     │
-          │     ▼
-          └─ Zustand store → React 组件渲染
-```
-
-### 6.4 消息历史格式
-
-Agent Loop 内部使用 `ChatMessageWire` 格式：
-
-```typescript
-interface ChatMessageWire {
-  role: 'system' | 'user' | 'assistant' | 'tool';
-  content?: string | null;
-  tool_call_id?: string;
-  tool_calls?: ToolCallWire[];
+function isDenied(command: string): boolean {
+  return /\b(rm\s+-rf\s+\/|mkfs|diskutil\s+erase|shutdown|reboot)\b/.test(command);
 }
 ```
 
-这与 OpenAI Chat Completions API 的消息格式完全兼容。
+拒绝执行明显具有破坏性的命令。
 
----
-
-## 7. 完整调用链路
-
-### 7.1 用户发送消息 → 最终回答
-
-```
-用户输入 prompt
-    │
-    ▼
-app-store.ts: sendMessage(prompt)
-    │
-    ├─ 创建 UserMessage + AssistantMessage（占位）
-    ├─ 设置 loading = true, abortController
-    │
-    ▼
-app-store.ts: runQueuedTask(prompt)
-    │
-    ├─ 判断 activeProvider 类型
-    │
-    ├─ [LLM API 模式] ──────────────────────────────────────
-    │   │
-    │   ├─ streamBridgeLlmApi() 或 window.pigagent.chatLlmApi()
-    │   │   │
-    │   │   ▼
-    │   ├─ dev-bridge.ts: /llm-api/stream 或 /llm-api/chat
-    │   │   │
-    │   │   ▼
-    │   ├─ llm-api.ts: streamChatWithLlmApi() 或 chatWithLlmApi()
-    │   │   │
-    │   │   ▼
-    │   ├─ AgentLoop.run()
-    │   │   │
-    │   │   ├─ 构建 system prompt
-    │   │   ├─ FOR turn = 0..maxTurns:
-    │   │   │   ├─ requestChatCompletion() → LLM API
-    │   │   │   ├─ 解析 tool_calls
-    │   │   │   ├─ IF 无 tool_calls → 返回 content
-    │   │   │   ├─ 追加 assistant 消息
-    │   │   │   ├─ FOR EACH tool_call:
-    │   │   │   │   ├─ tools.execute(name, args)
-    │   │   │   │   └─ 追加 tool 结果
-    │   │   │   └─ 继续循环
-    │   │   │
-    │   │   └─ 返回 AgentLoopResult
-    │   │
-    │   └─ 事件流回 Renderer → Zustand store → UI 更新
-    │
-    ├─ [CLI Agent 模式] ────────────────────────────────────
-    │   │
-    │   ├─ callBridge() → /execute (SSE)
-    │   │   │
-    │   │   ▼
-    │   ├─ dev-bridge.ts: executeClaude / executeCodex / executeAcp
-    │   │   │
-    │   │   ▼
-    │   ├─ spawn CLI Agent 进程
-    │   ├─ 解析 stdout JSON 流
-    │   └─ SSE 事件流回 Renderer
-    │
-    └─ startNextQueuedTask() → 处理队列中的下一个任务
-```
-
-### 7.2 Electron IPC 路径
-
-```
-Renderer (React)                    Main Process
-    │                                     │
-    ├─ window.pigagent.chatLlmApi() ──────┤
-    │                                     ├─ ipc-handlers.ts
-    │                                     │   IPC.LLM_API_CHAT
-    │                                     ├─ llm-api.ts
-    │                                     │   chatWithLlmApi()
-    │                                     ├─ AgentLoop.run()
-    │                                     └─ 返回结果
-    │                                     │
-    └─ 结果 ←─────────────────────────────┘
-```
-
-### 7.3 浏览器预览路径
-
-```
-Renderer (React)                    Dev Bridge (HTTP)
-    │                                     │
-    ├─ fetch(/llm-api/stream) ────────────┤
-    │   POST {config, prompt, cwd}        ├─ streamChatWithLlmApi()
-    │                                     ├─ AgentLoop.run()
-    │   SSE events ←──────────────────────┤
-    │   event: message                    │
-    │   data: {type, ...}                 │
-    └─ 解析 SSE → Zustand store           │
-```
-
----
-
-## 8. 安全与边界控制
-
-### 8.1 路径逃逸防护
-
-`resolveWorkspacePath()` 确保所有文件操作路径不会逃逸出工作区根目录：
+### 7.2 路径逃逸防护
 
 ```typescript
 function resolveWorkspacePath(cwd: string, inputPath: string): string {
@@ -508,214 +506,178 @@ function resolveWorkspacePath(cwd: string, inputPath: string): string {
 }
 ```
 
-### 8.2 Shell 命令安全
+所有文件操作工具都通过此函数解析路径，防止 `../../etc/passwd` 等路径逃逸攻击。
 
-- 拒绝执行明显破坏性命令（正则匹配）
-- 超时保护（默认 60s，最大 180s）
-- 输出截断（各 30KB）
+### 7.3 文本截断限制
 
-### 8.3 文件大小限制
-
-| 操作 | 限制 |
+| 场景 | 上限 |
 |------|------|
-| 单文件读取 | 60KB 截断 |
-| 批量读取 | 最多 20 个文件，总计 80KB |
-| 文件写入 | 无硬限制 |
-| Web 获取 | 50KB 截断 |
-| Shell 输出 | 各 30KB 截断 |
+| 单文件读取 (`file_read`) | 60KB |
+| 批量读取总上限 (`file_read_many`) | 80KB |
+| 单文件最大读取 | 20KB |
+| Shell stdout | 30KB |
+| Shell stderr | 30KB |
+| Web 抓取 | 50KB |
+| Shell 超时 | 180s (默认60s) |
 
-### 8.4 循环保护
+### 7.4 API 密钥安全
 
-- 最大轮次：20（可配置）
-- 总超时：600 秒（10 分钟）
-- 支持 AbortSignal 手动中止
+```typescript
+function resolveApiKey(config: LlmApiConfig): string {
+  // 1. 优先使用 config.apiKey
+  // 2. 从 .env 文件中读取环境变量
+  // 3. 从 process.env 中读取
+  // 4. 支持多个候选环境变量名
+}
+```
+
+密钥不会在日志或事件中暴露。
 
 ---
 
-## 9. 流程图
+## 8. 关键设计决策
 
-### 9.1 Agent Loop 主循环
+### 8.1 为什么使用流式 (stream: true)
 
-```mermaid
-flowchart TD
-    Start([用户输入 Prompt]) --> BuildMsg[构建消息历史<br/>system + user]
-    BuildMsg --> LoopCheck{轮次 < maxTurns?}
-    
-    LoopCheck -->|是| CallLLM[调用 LLM Chat Completions API<br/>传入 messages + tools]
-    CallLLM --> ParseResp[解析响应]
-    ParseResp --> HasTools{有 tool_calls?}
-    
-    HasTools -->|否| ReturnFinal[返回最终回答 content]
-    HasTools -->|是| AppendAssistant[追加 assistant 消息<br/>含 tool_calls 到历史]
-    AppendAssistant --> LoopTools[遍历每个 tool_call]
-    
-    LoopTools --> ExecTool[执行工具<br/>tools.execute(name, args)]
-    ExecTool --> AppendResult[追加 tool 结果到历史]
-    AppendResult --> MoreTools{还有更多 tool_call?}
-    MoreTools -->|是| LoopTools
-    MoreTools -->|否| LoopCheck
-    
-    LoopCheck -->|否| ThrowError[抛出错误<br/>达到最大轮次]
-    
-    ReturnFinal --> Done([返回 AgentLoopResult])
-    ThrowError --> Done
+- 实时显示模型思考过程，提升用户体验
+- 支持逐 token 渲染 tool_calls，减少首 token 延迟
+- 用户可以在模型思考过程中提前感知进度
+
+### 8.2 为什么单轮超时 90s
+
+- 平衡用户体验和模型响应时间
+- 如果模型超时但工具已执行，fallback 机制保证不丢失结果
+- 整体任务超时 600s (10分钟) 由调用方控制
+
+### 8.3 为什么最大轮次 20
+
+- 防止无限循环
+- 大多数任务在 3-8 轮内完成
+- 20 轮足够处理复杂的多步骤任务
+
+### 8.4 为什么 tool_choice 固定为 'auto'
+
+- 让模型自主决定是否调用工具
+- 不强制工具调用，允许纯文本回复
+- 模型可以自由选择"思考→行动→观察"的节奏
+
+### 8.5 为什么 temperature 固定 0.2
+
+- 降低随机性，提高工具调用的确定性
+- 适合代码生成和文件操作场景
+- 减少幻觉和错误的工具调用
+
+### 8.6 为什么使用 Map 存储 tool_calls
+
+- 支持分块传输的 SSE 流
+- 按 index 排序保证工具调用顺序
+- 去重处理（同一个 index 多次 delta）
+
+---
+
+## 9. 状态机
+
 ```
+                    ┌─────────────────────────────────────────────┐
+                    │              Agent Loop 状态机               │
+                    └─────────────────────────────────────────────┘
 
-### 9.2 工具注册与执行
+    [*] ──→ thinking: 用户发送消息，模型开始分析任务
+                  │
+                  ├──→ streaming: 模型开始流式输出文本
+                  │         │
+                  │         ├──→ executing: 模型返回 tool_calls，开始执行工具
+                  │         │         │
+                  │         │         └──→ post_tool: 工具执行完成，等待模型总结
+                  │         │                   │
+                  │         │                   ├──→ streaming: 模型继续推理（下一轮）
+                  │         │                   └──→ thinking: 模型继续推理（下一轮）
+                  │         │
+                  │         └──→ done: 模型返回纯文本（无 tool_calls）
+                  │
+                  └──→ executing: 模型直接返回 tool_calls（无文本）
+                            │
+                            └──→ post_tool → ... → done
 
-```mermaid
-flowchart LR
-    subgraph 注册阶段
-        Create[createDefaultToolRegistry] --> Reg1[register weatherCurrentTool]
-        Reg1 --> Reg2[register listDirTool]
-        Reg2 --> Reg3[register workspaceFilesTool]
-        Reg3 --> Reg4[register workspaceSearchTool]
-        Reg4 --> Reg5[register fileReadTool]
-        Reg5 --> Reg6[register fileReadManyTool]
-        Reg6 --> Reg7[register fileWriteTool]
-        Reg7 --> Reg8[register shellExecTool]
-        Reg8 --> Reg9[register webFetchTool]
-        Reg9 --> Reg10[register applyPatchTool]
-        Reg10 --> Ready[ToolRegistry Ready]
-    end
-    
-    subgraph 执行阶段
-        AgentLoop -->|tools.schemas()| GetSchemas[获取所有工具 Schema<br/>→ 传给 LLM]
-        AgentLoop -->|tools.execute()| Dispatch{查找工具}
-        Dispatch -->|找到| Run[执行 tool.run]
-        Dispatch -->|未找到| Error[返回错误]
-        Run --> Result[返回 AgentToolResult]
-    end
-    
-    Ready --> GetSchemas
-    Ready --> Dispatch
-```
-
-### 9.3 完整调用链路
-
-```mermaid
-sequenceDiagram
-    participant User as 用户
-    participant UI as React UI (Zustand)
-    participant Bridge as Dev Bridge (HTTP)
-    participant Loop as AgentLoop
-    participant LLM as LLM API (DeepSeek)
-    participant Tools as ToolRegistry
-    
-    User->>UI: 输入 prompt
-    UI->>UI: sendMessage() → 创建消息占位
-    
-    alt LLM API 模式
-        UI->>Bridge: POST /llm-api/stream (SSE)
-        Bridge->>Loop: streamChatWithLlmApi()
-        Loop->>Loop: AgentLoop.run()
-        
-        Note over Loop,LLM: 第 1 轮
-        Loop->>LLM: POST /v1/chat/completions<br/>messages + tools
-        LLM-->>Loop: tool_calls [workspace_list, file_read]
-        
-        Loop->>Tools: execute(workspace_list)
-        Tools-->>Loop: {ok, result}
-        Loop->>Tools: execute(file_read)
-        Tools-->>Loop: {ok, result}
-        
-        Loop->>Bridge: onEvent({type:'tool_start',...})
-        Loop->>Bridge: onEvent({type:'tool_result',...})
-        Bridge-->>UI: SSE event: data:{type:'tool_start',...}
-        Bridge-->>UI: SSE event: data:{type:'tool_result',...}
-        
-        Note over Loop,LLM: 第 2 轮
-        Loop->>LLM: POST /v1/chat/completions<br/>messages + tool results
-        LLM-->>Loop: content (最终回答)
-        
-        Loop->>Bridge: onEvent({type:'final', content})
-        Bridge-->>UI: SSE event: data:{type:'final', content}
-        UI->>UI: updateAssistantFromLlmEvent()<br/>→ 更新消息列表
-        
-    else CLI Agent 模式
-        UI->>Bridge: POST /execute (SSE)
-        Bridge->>Bridge: spawn CLI Agent 进程
-        Bridge-->>UI: SSE event: block_start / block_delta / block_full
-        UI->>UI: 解析 BridgeEvent → 更新消息列表
-    end
-    
-    UI->>UI: startNextQueuedTask()
-    UI-->>User: 显示最终回答
-```
-
-### 9.4 消息历史流转
-
-```mermaid
-flowchart TD
-    subgraph 消息历史 (messages[])
-        M1[system: 系统提示词]
-        M2[user: 用户输入]
-        M3[assistant: tool_calls]
-        M4[tool: workspace_list 结果]
-        M5[tool: file_read 结果]
-        M6[assistant: 更多 tool_calls]
-        M7[tool: shell_exec 结果]
-        M8[assistant: 最终回答]
-    end
-    
-    M1 --> M2 --> M3 --> M4 --> M5 --> M6 --> M7 --> M8
-    
-    style M1 fill:#f0f0f0
-    style M2 fill:#d4e6f1
-    style M3 fill:#f9e79f
-    style M4 fill:#d5f5e3
-    style M5 fill:#d5f5e3
-    style M6 fill:#f9e79f
-    style M7 fill:#d5f5e3
-    style M8 fill:#aed6f1
+    状态说明:
+    - thinking:   模型正在分析任务，尚未输出任何内容
+    - streaming:  模型正在流式输出文本内容
+    - executing:  正在执行工具调用
+    - post_tool:  工具执行完成，结果已加入对话，等待模型下一轮推理
+    - done:       任务完成，返回最终结果
 ```
 
 ---
 
-## 附录 A：关键文件索引
+## 10. 扩展点
+
+### 10.1 添加新工具
+
+1. 在 `src/main/agent-core/tools/` 下创建工具文件
+2. 实现 `AgentTool` 接口（name, schema, run）
+3. 在 `default-tools.ts` 中注册
+
+```typescript
+// 示例：添加一个计算器工具
+export const calculatorTool: AgentTool = {
+  name: 'calculator',
+  schema: {
+    type: 'function',
+    function: {
+      name: 'calculator',
+      description: 'Perform arithmetic calculation.',
+      parameters: {
+        type: 'object',
+        properties: {
+          expression: { type: 'string', description: 'Math expression to evaluate.' },
+        },
+        required: ['expression'],
+      },
+    },
+  },
+  async run(args) {
+    const expression = String(args.expression || '');
+    return { result: eval(expression) }; // 注意：实际使用需安全评估
+  },
+};
+```
+
+### 10.2 自定义 System Prompt
+
+修改 `buildSystemPrompt()` 函数即可调整模型行为：
+
+```typescript
+function buildSystemPrompt(): string {
+  return [
+    'You are PigAgent, a Codex-style desktop software agent.',
+    // ... 添加自定义指令
+  ].join('\n');
+}
+```
+
+### 10.3 支持更多 LLM Provider
+
+在 `llm-api.ts` 中，`chatWithLlmApi()` 和 `streamChatWithLlmApi()` 已经支持任何 OpenAI 兼容的 API。只需在设置中添加新的 `LlmApiConfig` 即可。
+
+---
+
+## 11. 文件清单
 
 | 文件 | 职责 |
 |------|------|
-| `src/main/agent-core/loop.ts` | Agent Loop 主循环 |
-| `src/main/agent-core/tool-registry.ts` | 工具注册与调度 |
-| `src/main/agent-core/types.ts` | 核心类型定义 |
+| `src/main/agent-core/loop.ts` | Agent Loop 主循环，LLM 通信，SSE 解析 |
+| `src/main/agent-core/types.ts` | 核心类型定义（消息、工具、事件、选项） |
+| `src/main/agent-core/tool-registry.ts` | 工具注册表，执行调度 |
 | `src/main/agent-core/default-tools.ts` | 默认工具集注册 |
-| `src/main/agent-core/tools/workspace.ts` | 工作区文件工具 |
-| `src/main/agent-core/tools/shell.ts` | Shell 执行工具 |
-| `src/main/agent-core/tools/patch.ts` | 补丁应用工具 |
-| `src/main/agent-core/tools/web.ts` | 网页获取工具 |
+| `src/main/agent-core/tools/workspace.ts` | 工作区文件操作工具 |
+| `src/main/agent-core/tools/shell.ts` | Shell 命令执行工具 |
+| `src/main/agent-core/tools/web.ts` | HTTP 请求工具 |
 | `src/main/agent-core/tools/weather.ts` | 天气查询工具 |
-| `src/main/agent-core/tools/shared.ts` | 共享工具函数 |
-| `src/main/llm-api.ts` | LLM API 调用入口 |
-| `src/main/dev-bridge.ts` | 浏览器预览 HTTP Bridge |
+| `src/main/agent-core/tools/patch.ts` | Git patch 应用工具 |
+| `src/main/agent-core/tools/shared.ts` | 工具共享函数（路径解析、文本截断） |
+| `src/main/llm-api.ts` | API 密钥解析，AgentLoop 入口封装 |
+| `src/main/dev-bridge.ts` | 开发模式 HTTP Bridge |
 | `src/main/ipc-handlers.ts` | Electron IPC 处理器 |
-| `src/main/index.ts` | Electron 主进程入口 |
-| `src/main/agent-runtime/runtime.ts` | CLI Agent 运行时 |
+| `src/main/session-manager.ts` | 会话持久化管理 |
+| `src/main/agent-runtime/runtime.ts` | Agent Runtime（多 provider 管理） |
 | `src/main/agent-runtime/provider-registry.ts` | Provider 注册与发现 |
-| `src/main/agent-runtime/execenv.ts` | 执行环境准备 |
-| `src/renderer/stores/app-store.ts` | Zustand 状态管理（含 Agent 调用逻辑） |
-| `src/shared/types.ts` | 共享类型定义 |
-| `src/shared/ipc-channels.ts` | IPC 通道常量 |
-
-## 附录 B：关键设计决策
-
-### B.1 为什么宿主拥有循环？
-
-Codex 风格的核心思想：**模型只是循环中的一个组件**。宿主（应用程序）控制：
-- 何时调用模型
-- 执行哪些工具
-- 如何观察结果
-- 何时终止循环
-
-这使得工具执行、安全策略、上下文管理都在宿主侧可控，而不是交给模型自行决定。
-
-### B.2 为什么用 ToolRegistry 而非直接调用？
-
-- **解耦**：工具注册与执行分离，新增工具只需实现 `AgentTool` 接口
-- **Schema 自动生成**：所有工具的 OpenAI function-calling schema 统一收集
-- **错误隔离**：每个工具的执行错误被捕获并返回结构化结果，不会中断循环
-
-### B.3 为什么支持两种模式？
-
-- **LLM API 模式**：完全自主控制，适合深度集成（Codex 风格）
-- **CLI Agent 模式**：复用现有 CLI Agent 能力，快速接入多种 Provider
