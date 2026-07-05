@@ -3,7 +3,23 @@ import { useAppStore } from '../../stores/app-store';
 import MessageBubble from './MessageBubble';
 
 export default function ChatPanel() {
-  const { messages, activeWorkspaceId, activeProvider, providerInfos, settings, loading, sendMessage, stopGeneration, regenerate, setProvider, toggleSettings, workspaces } = useAppStore();
+  const {
+    messages,
+    activeWorkspaceId,
+    activeProvider,
+    providerInfos,
+    settings,
+    loading,
+    taskQueue,
+    sendMessage,
+    stopGeneration,
+    regenerate,
+    setProvider,
+    toggleSettings,
+    removeQueuedTask,
+    clearTaskQueue,
+    workspaces,
+  } = useAppStore();
   const [input, setInput] = useState('');
   const [modelOpen, setModelOpen] = useState(false);
   const chatRef = useRef<HTMLDivElement>(null);
@@ -90,6 +106,39 @@ export default function ChatPanel() {
       {/* Input area — never blocked */}
       <div className="bg-[var(--background)] shrink-0">
         <div className="max-w-[800px] mx-auto p-4">
+          {taskQueue.length > 0 && (
+            <div className="mb-2 rounded-lg border border-[var(--border)] bg-[var(--muted)]/20 px-3 py-2">
+              <div className="mb-1.5 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-[11px] font-medium text-[var(--muted-foreground)]">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
+                  <span>队列中 {taskQueue.length} 个任务</span>
+                </div>
+                <button
+                  onClick={clearTaskQueue}
+                  className="text-[11px] text-[var(--muted-foreground)] transition hover:text-[var(--destructive)]"
+                  title="清空队列"
+                >
+                  清空
+                </button>
+              </div>
+              <div className="space-y-1">
+                {taskQueue.map((task, index) => (
+                  <div key={task.id} className="flex items-center gap-2 rounded-md bg-[var(--background)]/70 px-2 py-1.5 text-xs">
+                    <span className="shrink-0 text-[10px] tabular-nums text-[var(--muted-foreground)]/60">{index + 1}</span>
+                    <span className="min-w-0 flex-1 truncate text-[var(--foreground)]/70">{task.prompt}</span>
+                    <button
+                      onClick={() => removeQueuedTask(task.id)}
+                      className="grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--muted-foreground)] transition hover:bg-[var(--muted)] hover:text-[var(--destructive)]"
+                      title="移除队列任务"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="relative border border-[var(--border)] rounded-xl bg-[var(--background)] shadow-sm transition-all duration-200 focus-within:border-[var(--accent)]/40 focus-within:ring-1 focus-within:ring-[var(--accent)]/20">
             <textarea
               ref={inputRef}

@@ -48,6 +48,12 @@ interface ProviderInfo {
   version: string;
 }
 
+interface QueuedTask {
+  id: string;
+  prompt: string;
+  createdAt: number;
+}
+
 interface AppState {
   initialized: boolean;
   settingsOpen: boolean;
@@ -62,6 +68,7 @@ interface AppState {
   expandedWorkspaces: Set<string>;
   loading: boolean;
   abortController: AbortController | null;
+  taskQueue: QueuedTask[];
 
   init: () => Promise<void>;
   toggleSettings: () => void;
@@ -74,6 +81,10 @@ interface AppState {
   selectConversation: (conv: Conversation) => void;
 
   sendMessage: (prompt: string) => Promise<void>;
+  runQueuedTask: (prompt: string) => Promise<void>;
+  startNextQueuedTask: () => void;
+  removeQueuedTask: (id: string) => void;
+  clearTaskQueue: () => void;
   stopGeneration: () => void;
   regenerate: () => void;
   setProvider: (provider: string) => void;
@@ -313,6 +324,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   contextFiles: [],
   abortController: null,
   loading: false,
+  taskQueue: [],
 
   init: async () => {
     if (typeof window.pigagent === 'undefined') {
@@ -425,6 +437,22 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   sendMessage: async (prompt) => {
     const state = get();
+    if (state.loading) {
+      const text = prompt.trim();
+      if (!text) return;
+      set(s => ({
+        taskQueue: [
+          ...s.taskQueue,
+          { id: `queue_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, prompt: text, createdAt: Date.now() },
+        ],
+      }));
+      return;
+    }
+    await get().runQueuedTask(prompt);
+  },
+
+  runQueuedTask: async (prompt) => {
+    const state = get();
     const userMsg: ChatMessage = { id: nextMsgId(), role: 'user', content: prompt, timestamp: Date.now() };
     const assistantMsg: ChatMessage = { id: nextMsgId(), role: 'assistant', blocks: [], partial: true, status: 'connecting', timestamp: Date.now() };
     const controller = new AbortController();
@@ -450,6 +478,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       } catch (e: any) {
         set(completeAssistant(assistantId, `Error: ${e?.message || e}`));
       }
+      get().startNextQueuedTask();
       return;
     }
 
@@ -538,6 +567,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           }));
         }
       }
+      get().startNextQueuedTask();
       return;
     }
 
@@ -555,6 +585,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       conversationId: state.activeConversationId,
     });
   },
+
+  startNextQueuedTask: () => {
+    const state = get();
+    if (state.loading || state.taskQueue.length === 0) return;
+    const [next, ...rest] = state.taskQueue;
+    set({ taskQueue: rest });
+    void get().runQueuedTask(next.prompt);
+  },
+
+  removeQueuedTask: (id) => {
+    set(s => ({ taskQueue: s.taskQueue.filter(task => task.id !== id) }));
+  },
+
+  clearTaskQueue: () => set({ taskQueue: [] }),
 
   stopGeneration: () => {
     const { abortController } = get();
