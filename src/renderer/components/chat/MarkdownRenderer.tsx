@@ -1,4 +1,6 @@
 import React, { useCallback, useMemo } from 'react';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 const COPY_TIMEOUT = 2000;
 
@@ -24,15 +26,35 @@ function CodeBlock({ language, content }: { language?: string; content: string }
 
   return (
     <div className="relative group my-2">
-      <div className="flex items-center justify-between bg-gray-700 rounded-t-md px-3 py-1.5">
-        <span className="text-gray-300 text-[11px] font-mono">{language || 'code'}</span>
-        <button onClick={handleCopy} className="text-gray-400 hover:text-white text-[11px] transition">
+      <div className="flex items-center justify-between rounded-t-md border border-[var(--border)] bg-[var(--muted)]/40 px-3 py-1.5">
+        <span className="text-[var(--muted-foreground)] text-[11px] font-mono">{language || 'code'}</span>
+        <button onClick={handleCopy} className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] text-[11px] transition">
           {copied ? 'Copied!' : 'Copy'}
         </button>
       </div>
-      <pre className="bg-gray-800 text-gray-100 rounded-b-md p-3 overflow-x-auto text-xs leading-relaxed font-mono whitespace-pre-wrap break-words">
-        <code>{content}</code>
-      </pre>
+      <div className="rounded-b-md border-x border-b border-[var(--border)] bg-[var(--background)] overflow-x-auto">
+        <SyntaxHighlighter
+          language={language || 'text'}
+          style={oneLight}
+          PreTag="div"
+          customStyle={{
+            margin: 0,
+            padding: '12px',
+            background: 'transparent',
+            fontSize: '12px',
+            lineHeight: 1.65,
+          }}
+          codeTagProps={{
+            style: {
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+            },
+          }}
+        >
+          {content}
+        </SyntaxHighlighter>
+      </div>
     </div>
   );
 }
