@@ -143,7 +143,40 @@ export interface LlmApiChatResult {
     name: string;
     args: Record<string, unknown>;
     ok: boolean;
+    output?: string;
   }>;
+}
+
+export interface AgentMemory {
+  conversationSummary?: string;
+  filesTouched: Array<{
+    path: string;
+    action: 'read' | 'write' | 'patch' | 'delete' | 'other';
+    summary?: string;
+    timestamp: number;
+  }>;
+  artifacts: Array<{
+    path: string;
+    type: 'doc' | 'patch' | 'report' | 'code' | 'other';
+    summary: string;
+    createdAt: number;
+  }>;
+  toolSummaries: Array<{
+    name: string;
+    ok: boolean;
+    summary: string;
+    timestamp: number;
+  }>;
+}
+
+export interface AgentContextMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface AgentContextPayload {
+  recentMessages: AgentContextMessage[];
+  memory: AgentMemory;
 }
 
 export type LlmApiChatEvent =
@@ -152,7 +185,7 @@ export type LlmApiChatEvent =
   | { type: 'tool_result'; name: string; ok: boolean; output: string }
   | { type: 'text_start' }
   | { type: 'text_delta'; delta: string }
-  | { type: 'final'; content?: string; latencyMs: number }
+  | { type: 'final'; content?: string; latencyMs: number; toolCalls?: LlmApiChatResult['toolCalls'] }
   | { type: 'error'; error: string };
 
 export interface AppSettings {

@@ -1,4 +1,4 @@
-import { LlmApiConfig } from '../../shared/types';
+import { AgentContextPayload, LlmApiConfig } from '../../shared/types';
 
 export type ChatRole = 'system' | 'user' | 'assistant' | 'tool';
 
@@ -48,6 +48,7 @@ export interface AgentLoopOptions {
   apiKey: string;
   prompt: string;
   cwd: string;
+  context?: AgentContextPayload;
   signal?: AbortSignal;
   maxTurns?: number;
   onEvent?: (event: AgentLoopEvent) => void;

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { IPC, IPC_EVENTS } from '../shared/ipc-channels';
-import { ProviderInfo, Workspace, Conversation, AppSettings, AgentConfig, AgentMessage, LlmApiChatResult, LlmApiConfig, LlmApiTestResult } from '../shared/types';
+import { ProviderInfo, Workspace, Conversation, AppSettings, AgentConfig, AgentMessage, LlmApiChatResult, LlmApiConfig, LlmApiTestResult, AgentContextPayload } from '../shared/types';
 
 const api = {
   // Agent
@@ -22,7 +22,7 @@ const api = {
   getSettings: (): Promise<AppSettings> => ipcRenderer.invoke(IPC.SETTINGS_GET),
   saveSettings: (settings: AppSettings) => ipcRenderer.invoke(IPC.SETTINGS_SET, settings),
   testLlmApi: (config: LlmApiConfig): Promise<LlmApiTestResult> => ipcRenderer.invoke(IPC.LLM_API_TEST, config),
-  chatLlmApi: (config: LlmApiConfig, prompt: string, cwd?: string): Promise<LlmApiChatResult> => ipcRenderer.invoke(IPC.LLM_API_CHAT, { config, prompt, cwd }),
+  chatLlmApi: (config: LlmApiConfig, prompt: string, cwd?: string, context?: AgentContextPayload): Promise<LlmApiChatResult> => ipcRenderer.invoke(IPC.LLM_API_CHAT, { config, prompt, cwd, context }),
 
   // File
   readFile: (filePath: string): Promise<string> => ipcRenderer.invoke(IPC.FILE_READ, filePath),

@@ -5,7 +5,7 @@ import { providerRegistry } from './agent-runtime/provider-registry';
 import { prepareEnv } from './agent-runtime/execenv';
 import { SessionManager } from './session-manager';
 import { chatWithLlmApi, testLlmApi } from './llm-api';
-import { AgentMessage, Conversation, LlmApiConfig, Workspace } from '../shared/types';
+import { AgentContextPayload, AgentMessage, Conversation, LlmApiConfig, Workspace } from '../shared/types';
 import * as path from 'path';
 import * as os from 'os';
 
@@ -98,8 +98,8 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null) {
     return testLlmApi(config);
   });
 
-  ipcMain.handle(IPC.LLM_API_CHAT, async (event, { config, prompt, cwd }: { config: LlmApiConfig; prompt: string; cwd?: string }) => {
-    return chatWithLlmApi(config, prompt, cwd);
+  ipcMain.handle(IPC.LLM_API_CHAT, async (event, { config, prompt, cwd, context }: { config: LlmApiConfig; prompt: string; cwd?: string; context?: AgentContextPayload }) => {
+    return chatWithLlmApi(config, prompt, cwd, context);
   });
 
   // ---- File operations ----

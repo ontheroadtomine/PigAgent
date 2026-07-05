@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { LlmApiChatEvent, LlmApiChatResult, LlmApiConfig, LlmApiTestResult } from '../shared/types';
+import { AgentContextPayload, LlmApiChatEvent, LlmApiChatResult, LlmApiConfig, LlmApiTestResult } from '../shared/types';
 import { createDefaultToolRegistry } from './agent-core/default-tools';
 import { AgentLoop, requestChatCompletion } from './agent-core/loop';
 
@@ -91,7 +91,7 @@ export async function testLlmApi(config: LlmApiConfig): Promise<LlmApiTestResult
   }
 }
 
-export async function chatWithLlmApi(config: LlmApiConfig, prompt: string, cwd = process.cwd()): Promise<LlmApiChatResult> {
+export async function chatWithLlmApi(config: LlmApiConfig, prompt: string, cwd = process.cwd(), context?: AgentContextPayload): Promise<LlmApiChatResult> {
   const started = Date.now();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), AGENT_LOOP_TIMEOUT_MS);
@@ -104,6 +104,7 @@ export async function chatWithLlmApi(config: LlmApiConfig, prompt: string, cwd =
       apiKey,
       prompt,
       cwd,
+      context,
       signal: controller.signal,
     });
 
@@ -132,6 +133,7 @@ export async function streamChatWithLlmApi(
   config: LlmApiConfig,
   prompt: string,
   cwd: string,
+  context: AgentContextPayload | undefined,
   emit: (event: LlmApiChatEvent) => void,
 ): Promise<void> {
   const started = Date.now();
@@ -146,10 +148,11 @@ export async function streamChatWithLlmApi(
       apiKey,
       prompt,
       cwd,
+      context,
       signal: controller.signal,
       onEvent: event => emit(event),
     });
-    emit({ type: 'final', content: result.content, latencyMs: Date.now() - started });
+    emit({ type: 'final', content: result.content, latencyMs: Date.now() - started, toolCalls: result.toolCalls });
   } catch (error: any) {
     emit({ type: 'error', error: error?.name === 'AbortError' ? `Agent task timed out after ${Math.round(AGENT_LOOP_TIMEOUT_MS / 1000)} seconds` : String(error?.message || error) });
   } finally {

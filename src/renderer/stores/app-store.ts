@@ -1,9 +1,10 @@
 import { create } from 'zustand';
-import { Workspace, Conversation, AgentConfig, AppSettings, ChatMessage, ContentBlock, BridgeEvent, ExecutionStatus, LlmApiChatEvent, LlmApiChatResult, LlmApiConfig } from '../../shared/types';
+import { Workspace, Conversation, AgentConfig, AppSettings, ChatMessage, ContentBlock, BridgeEvent, ExecutionStatus, LlmApiChatEvent, LlmApiChatResult, LlmApiConfig, AgentMemory, AgentContextPayload, AgentContextMessage } from '../../shared/types';
 
 const BRIDGE_URL = 'http://localhost:9876';
 const BROWSER_SETTINGS_KEY = 'pigagent.settings';
 const BROWSER_PROVIDER_KEY = 'pigagent.activeProvider';
+const BROWSER_MEMORY_KEY = 'pigagent.agentMemory';
 
 const defaultSettings: AppSettings = {
   theme: 'light',
@@ -22,6 +23,90 @@ const defaultSettings: AppSettings = {
     },
   ],
 };
+
+const defaultAgentMemory: AgentMemory = {
+  filesTouched: [],
+  artifacts: [],
+  toolSummaries: [],
+};
+
+function normalizeAgentMemory(memory?: Partial<AgentMemory>): AgentMemory {
+  return {
+    conversationSummary: memory?.conversationSummary || '',
+    filesTouched: Array.isArray(memory?.filesTouched) ? memory.filesTouched.slice(-30) : [],
+    artifacts: Array.isArray(memory?.artifacts) ? memory.artifacts.slice(-30) : [],
+    toolSummaries: Array.isArray(memory?.toolSummaries) ? memory.toolSummaries.slice(-50) : [],
+  };
+}
+
+function memoryStorageKey(conversationId?: string | null): string {
+  return conversationId ? `${BROWSER_MEMORY_KEY}.${conversationId}` : BROWSER_MEMORY_KEY;
+}
+
+function loadStoredMemory(conversationId?: string | null): AgentMemory {
+  try {
+    return normalizeAgentMemory(JSON.parse(localStorage.getItem(memoryStorageKey(conversationId)) || '{}'));
+  } catch {
+    return defaultAgentMemory;
+  }
+}
+
+function saveStoredMemory(conversationId: string | null | undefined, memory: AgentMemory): void {
+  localStorage.setItem(memoryStorageKey(conversationId), JSON.stringify(memory));
+}
+
+function assistantBlocksToText(blocks: ContentBlock[]): string {
+  return blocks
+    .filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text')
+    .map(block => block.content)
+    .join('\n\n')
+    .trim();
+}
+
+function buildRecentContextMessages(messages: ChatMessage[], pendingPrompt?: string): AgentContextMessage[] {
+  const contextMessages: AgentContextMessage[] = [];
+  for (const message of messages.slice(-12)) {
+    if (message.role === 'user' && message.content.trim() && message.content !== pendingPrompt) {
+      contextMessages.push({ role: 'user', content: message.content.trim() });
+    }
+    if (message.role === 'assistant') {
+      const content = assistantBlocksToText(message.blocks);
+      if (content) contextMessages.push({ role: 'assistant', content });
+    }
+  }
+  return contextMessages.slice(-10);
+}
+
+function summarizeToolResult(name: string, ok: boolean, output: string): { summary: string; path?: string; action?: AgentMemory['filesTouched'][number]['action']; artifactType?: AgentMemory['artifacts'][number]['type'] } {
+  try {
+    const parsed = JSON.parse(output);
+    const result = parsed?.result;
+    if (Array.isArray(result?.files)) {
+      const paths = result.files.map((file: any) => file?.path).filter((path: unknown): path is string => typeof path === 'string');
+      return {
+        summary: `${ok ? '完成' : '失败'} ${name}: ${paths.slice(0, 8).join(', ')}${paths.length > 8 ? ` 等 ${paths.length} 个文件` : ''}`,
+        action: 'read',
+      };
+    }
+    const path = typeof result?.path === 'string' ? result.path : undefined;
+    const actionText = typeof result?.action === 'string' ? result.action : undefined;
+    const action: AgentMemory['filesTouched'][number]['action'] =
+      name === 'file_write' ? 'write'
+        : name === 'apply_patch' ? 'patch'
+        : name === 'file_read' || name === 'file_read_many' ? 'read'
+        : 'other';
+    const artifactType: AgentMemory['artifacts'][number]['type'] | undefined =
+      path?.endsWith('.md') ? 'doc'
+        : name === 'apply_patch' ? 'patch'
+        : undefined;
+    const summary = path
+      ? `${ok ? '完成' : '失败'} ${name}${actionText ? ` ${actionText}` : ''}: ${path}`
+      : `${ok ? '完成' : '失败'} ${name}`;
+    return { summary, path, action, artifactType };
+  } catch {
+    return { summary: `${ok ? '完成' : '失败'} ${name}: ${output.slice(0, 200)}` };
+  }
+}
 
 function normalizeLlmApiConfig(config: LlmApiConfig): LlmApiConfig {
   const legacy = config as LlmApiConfig & { envFile?: string; envVar?: string };
@@ -69,6 +154,7 @@ interface AppState {
   loading: boolean;
   abortController: AbortController | null;
   taskQueue: QueuedTask[];
+  agentMemory: AgentMemory;
 
   init: () => Promise<void>;
   toggleSettings: () => void;
@@ -85,6 +171,8 @@ interface AppState {
   startNextQueuedTask: () => void;
   removeQueuedTask: (id: string) => void;
   clearTaskQueue: () => void;
+  updateMemoryFromEvent: (event: LlmApiChatEvent) => void;
+  buildAgentContext: (pendingPrompt?: string) => AgentContextPayload;
   stopGeneration: () => void;
   regenerate: () => void;
   setProvider: (provider: string) => void;
@@ -134,11 +222,11 @@ async function callBridge(provider: string, prompt: string, cwd: string, onEvent
   onEvent({ type: 'message_complete' } as BridgeEvent);
 }
 
-async function callBridgeLlmApi(config: LlmApiConfig, prompt: string, cwd: string, signal?: AbortSignal): Promise<LlmApiChatResult> {
+async function callBridgeLlmApi(config: LlmApiConfig, prompt: string, cwd: string, context?: AgentContextPayload, signal?: AbortSignal): Promise<LlmApiChatResult> {
   const res = await fetch(`${BRIDGE_URL}/llm-api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ config, prompt, cwd }),
+    body: JSON.stringify({ config, prompt, cwd, context }),
     signal,
   });
   const text = await res.text();
@@ -170,13 +258,14 @@ async function streamBridgeLlmApi(
   config: LlmApiConfig,
   prompt: string,
   cwd: string,
+  context: AgentContextPayload,
   onEvent: (event: LlmApiChatEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
   const res = await fetch(`${BRIDGE_URL}/llm-api/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ config, prompt, cwd }),
+    body: JSON.stringify({ config, prompt, cwd, context }),
     signal,
   });
   if (!res.ok || !res.body) {
@@ -356,6 +445,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   abortController: null,
   loading: false,
   taskQueue: [],
+  agentMemory: defaultAgentMemory,
 
   init: async () => {
     if (typeof window.pigagent === 'undefined') {
@@ -390,6 +480,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         ],
         activeConversationId: 'c1',
         settings,
+        agentMemory: loadStoredMemory('c1'),
         providerInfos: infos,
         activeProvider: savedProvider || defaultProvider,
       });
@@ -406,14 +497,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (activeWsId) {
         convs = await window.pigagent.listConversations(activeWsId);
       }
+      const activeConversationId = convs[0]?.id || null;
       set({
         initialized: true,
         workspaces,
         activeWorkspaceId: activeWsId,
         expandedWorkspaces: activeWsId ? new Set([activeWsId]) : new Set(),
         conversations: convs,
-        activeConversationId: convs[0]?.id || null,
+        activeConversationId,
         settings,
+        agentMemory: loadStoredMemory(activeConversationId),
         providerInfos: providers.map((p: any) => ({ ...p, displayName: p.name })),
         activeProvider: settings.llmApis?.find((api: LlmApiConfig) => api.enabled) ? `llm:${settings.llmApis.find((api: LlmApiConfig) => api.enabled)!.id}` : providers.find((p: any) => p.available)?.name || 'claude',
       });
@@ -456,15 +549,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   createConversation: async (workspaceId, title) => {
     if (typeof window.pigagent === 'undefined') {
       const conv: Conversation = { id: Date.now().toString(36), workspaceId, title, createdAt: Date.now(), updatedAt: Date.now(), messageCount: 0 };
-      set(s => ({ conversations: [conv, ...s.conversations], activeConversationId: conv.id, messages: [] }));
+      set(s => ({ conversations: [conv, ...s.conversations], activeConversationId: conv.id, messages: [], agentMemory: defaultAgentMemory }));
       return conv;
     }
     const conv = await window.pigagent.createConversation(workspaceId, title);
-    set(s => ({ conversations: [conv, ...s.conversations], activeConversationId: conv.id, messages: [] }));
+    set(s => ({ conversations: [conv, ...s.conversations], activeConversationId: conv.id, messages: [], agentMemory: defaultAgentMemory }));
     return conv;
   },
 
-  selectConversation: (conv) => set({ activeConversationId: conv.id, messages: [] }),
+  selectConversation: (conv) => set({ activeConversationId: conv.id, messages: [], agentMemory: loadStoredMemory(conv.id) }),
 
   sendMessage: async (prompt) => {
     const state = get();
@@ -495,14 +588,25 @@ export const useAppStore = create<AppState>((set, get) => ({
       const assistantId = assistantMsg.id;
       const ws = state.workspaces.find(w => w.id === state.activeWorkspaceId);
       const cwd = ws?.path || '/tmp';
+      const context = get().buildAgentContext(prompt);
       set(updateAssistantFromLlmEvent(assistantId, { type: 'status', status: 'thinking', message: '分析任务' }));
       try {
         if (typeof window.pigagent !== 'undefined') {
-          const result = await window.pigagent.chatLlmApi(selectedLlmApi, prompt, cwd);
+          const result = await window.pigagent.chatLlmApi(selectedLlmApi, prompt, cwd, context);
           if (!result.ok) throw new Error(result.error || 'LLM API request failed');
+          for (const call of result.toolCalls || []) {
+            get().updateMemoryFromEvent({
+              type: 'tool_result',
+              name: call.name,
+              ok: call.ok,
+              output: call.output || JSON.stringify({ ok: call.ok, result: { path: call.args.path } }),
+            });
+          }
+          get().updateMemoryFromEvent({ type: 'final', content: result.content || '', latencyMs: result.latencyMs, toolCalls: result.toolCalls });
           set(completeAssistant(assistantId, result.content || '', result.toolCalls));
         } else {
-          await streamBridgeLlmApi(selectedLlmApi, prompt, cwd, event => {
+          await streamBridgeLlmApi(selectedLlmApi, prompt, cwd, context, event => {
+            get().updateMemoryFromEvent(event);
             set(updateAssistantFromLlmEvent(assistantId, event));
           }, controller.signal);
         }
@@ -630,6 +734,55 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   clearTaskQueue: () => set({ taskQueue: [] }),
+
+  buildAgentContext: (pendingPrompt) => {
+    const state = get();
+    return {
+      recentMessages: buildRecentContextMessages(state.messages, pendingPrompt),
+      memory: normalizeAgentMemory(state.agentMemory),
+    };
+  },
+
+  updateMemoryFromEvent: (event) => {
+    if (event.type !== 'tool_result' && event.type !== 'final') return;
+    set(s => {
+      const memory = normalizeAgentMemory(s.agentMemory);
+      const now = Date.now();
+
+      if (event.type === 'tool_result') {
+        const item = summarizeToolResult(event.name, event.ok, event.output);
+        memory.toolSummaries = [
+          ...memory.toolSummaries,
+          { name: event.name, ok: event.ok, summary: item.summary, timestamp: now },
+        ].slice(-50);
+
+        if (item.path) {
+          memory.filesTouched = [
+            ...memory.filesTouched.filter(file => !(file.path === item.path && file.action === item.action)),
+            { path: item.path, action: item.action || 'other', summary: item.summary, timestamp: now },
+          ].slice(-30);
+        }
+
+        if (event.ok && item.path && item.artifactType) {
+          memory.artifacts = [
+            ...memory.artifacts.filter(artifact => artifact.path !== item.path),
+            { path: item.path, type: item.artifactType, summary: item.summary, createdAt: now },
+          ].slice(-30);
+        }
+      }
+
+      if (event.type === 'final' && event.content?.trim()) {
+        const finalSummary = event.content.trim().slice(0, 1200);
+        memory.conversationSummary = [
+          memory.conversationSummary,
+          finalSummary,
+        ].filter(Boolean).join('\n\n').slice(-4000);
+      }
+
+      saveStoredMemory(s.activeConversationId, memory);
+      return { agentMemory: memory };
+    });
+  },
 
   stopGeneration: () => {
     const { abortController } = get();

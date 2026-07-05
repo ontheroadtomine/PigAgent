@@ -1,9 +1,12 @@
 import { LlmApiConfig } from '../../shared/types';
+import { buildContextMessages } from './context-builder';
 import { ToolRegistry } from './tool-registry';
 import { AgentLoopOptions, AgentLoopResult, ChatMessageWire, ToolCallWire } from './types';
 
 const DEFAULT_MAX_TURNS = 20;
 const DEFAULT_MODEL_ROUND_TIMEOUT_MS = 90_000;
+const MAX_LOOP_CONTEXT_CHARS = 140_000;
+const KEEP_RECENT_TOOL_RESULTS = 6;
 
 class ModelRoundTimeoutError extends Error {
   constructor() {
@@ -67,6 +70,29 @@ function buildFallbackSummary(toolCalls: AgentLoopResult['toolCalls']): string {
     '你可以根据上面的工具结果继续操作，或重新发送“总结刚才的结果”。',
   ];
   return lines.join('\n');
+}
+
+function estimateMessageChars(messages: ChatMessageWire[]): number {
+  return messages.reduce((total, message) => {
+    const toolCalls = message.tool_calls ? JSON.stringify(message.tool_calls).length : 0;
+    return total + (message.content?.length || 0) + toolCalls;
+  }, 0);
+}
+
+function pruneOldToolResults(messages: ChatMessageWire[]): void {
+  if (estimateMessageChars(messages) <= MAX_LOOP_CONTEXT_CHARS) return;
+
+  const toolIndexes = messages
+    .map((message, index) => ({ message, index }))
+    .filter(item => item.message.role === 'tool')
+    .map(item => item.index);
+  const pruneIndexes = toolIndexes.slice(0, Math.max(0, toolIndexes.length - KEEP_RECENT_TOOL_RESULTS));
+
+  for (const index of pruneIndexes) {
+    const message = messages[index];
+    if (!message.content || message.content.startsWith('[pruned tool result')) continue;
+    message.content = `[pruned tool result to control context size; original length ${message.content.length} chars]`;
+  }
 }
 
 function chatCompletionsUrl(config: LlmApiConfig): string {
@@ -218,6 +244,7 @@ export class AgentLoop {
     const maxTurns = options.maxTurns || DEFAULT_MAX_TURNS;
     const messages: ChatMessageWire[] = [
       { role: 'system', content: buildSystemPrompt() },
+      ...buildContextMessages(options.context),
       { role: 'user', content: options.prompt },
     ];
     const toolCallsLog: AgentLoopResult['toolCalls'] = [];
@@ -289,6 +316,7 @@ export class AgentLoop {
           tool_call_id: call.id,
           content: JSON.stringify(result),
         });
+        pruneOldToolResults(messages);
       }
     }
 

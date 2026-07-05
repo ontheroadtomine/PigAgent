@@ -359,8 +359,8 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'POST' && req.url === '/llm-api/chat') {
     try {
-      const { config, prompt, cwd } = await readJsonBody(req);
-      const result = await chatWithLlmApi(config, prompt, cwd);
+      const { config, prompt, cwd, context } = await readJsonBody(req);
+      const result = await chatWithLlmApi(config, prompt, cwd, context);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(result));
     } catch (e: any) {
@@ -372,13 +372,13 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'POST' && req.url === '/llm-api/stream') {
     try {
-      const { config, prompt, cwd } = await readJsonBody(req);
+      const { config, prompt, cwd, context } = await readJsonBody(req);
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         Connection: 'keep-alive',
       });
-      await streamChatWithLlmApi(config, prompt, cwd || process.cwd(), event => sendSSE(res, event));
+      await streamChatWithLlmApi(config, prompt, cwd || process.cwd(), context, event => sendSSE(res, event));
       if (!res.writableEnded) res.end();
     } catch (e: any) {
       if (!res.writableEnded) {
