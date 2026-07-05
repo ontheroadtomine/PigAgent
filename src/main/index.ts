@@ -3,6 +3,7 @@ import * as path from 'path';
 import { registerIpcHandlers } from './ipc-handlers';
 
 let mainWindow: BrowserWindow | null = null;
+const appIconPath = path.join(__dirname, '../../../resources/icon.png');
 
 function getMainWindow(): BrowserWindow | null {
   return mainWindow;
@@ -15,6 +16,7 @@ function createWindow(): void {
     minWidth: 1000,
     minHeight: 600,
     title: 'PigAgent',
+    icon: appIconPath,
     titleBarStyle: 'hiddenInset',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

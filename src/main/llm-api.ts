@@ -39,11 +39,12 @@ function resolveApiKey(config: LlmApiConfig): string {
   const envFilePath = config.envFilePath || legacyConfig.envFile;
   const apiKeyEnvVar = config.apiKeyEnvVar || legacyConfig.envVar;
   const envFile = parseEnvFile(envFilePath);
+  const fallbackCandidates = config.id.includes('deepseek') || config.provider === 'deepseek'
+    ? ['DEEPSEEK_API_KEY', 'DEEPSEEK_SECRET_KEY', 'DEEPSEEK_SECRENT_KEY']
+    : [];
   const candidates = Array.from(new Set([
     apiKeyEnvVar,
-    'DEEPSEEK_API_KEY',
-    'DEEPSEEK_SECRET_KEY',
-    'DEEPSEEK_SECRENT_KEY',
+    ...fallbackCandidates,
   ].filter(Boolean) as string[]));
 
   for (const name of candidates) {

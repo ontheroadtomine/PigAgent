@@ -15,6 +15,35 @@ function buildMemoryText(context?: AgentContextPayload): string {
   const { memory } = context;
   const sections: string[] = [];
 
+  if (context.workspaceMemory) {
+    const workspace = context.workspaceMemory;
+    const workspaceSections: string[] = [];
+    if (workspace.projectSummary?.trim()) {
+      workspaceSections.push(`Project summary:\n${trimText(workspace.projectSummary.trim(), 3_000)}`);
+    }
+    if (workspace.artifacts.length) {
+      workspaceSections.push([
+        'Workspace artifacts:',
+        ...workspace.artifacts.slice(-MAX_MEMORY_ITEMS).map(item => `- ${item.path} (${item.type}): ${item.summary}`),
+      ].join('\n'));
+    }
+    if (workspace.filesTouched.length) {
+      workspaceSections.push([
+        'Workspace recently touched files:',
+        ...workspace.filesTouched.slice(-MAX_MEMORY_ITEMS).map(item => `- ${item.action}: ${item.path}${item.summary ? ` — ${item.summary}` : ''}`),
+      ].join('\n'));
+    }
+    if (workspace.decisions.length) {
+      workspaceSections.push([
+        'Workspace decisions:',
+        ...workspace.decisions.slice(-MAX_MEMORY_ITEMS).map(item => `- ${item.title}: ${item.summary}`),
+      ].join('\n'));
+    }
+    if (workspaceSections.length) {
+      sections.push(workspaceSections.join('\n\n'));
+    }
+  }
+
   if (memory.conversationSummary?.trim()) {
     sections.push(`Conversation summary:\n${trimText(memory.conversationSummary.trim(), 4_000)}`);
   }

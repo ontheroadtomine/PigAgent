@@ -59,7 +59,12 @@ function AssistantBubble({ message }: { message: Extract<ChatMessage, { role: 'a
         </div>
       )}
       {orderedBlocks.map((block) => (
-        <BlockRenderer key={block.id} block={block} messageStatus={status} hasResult={blocks.some(b => b.type === 'tool_result' && b.toolOutput === block.toolName)} />
+        <BlockRenderer
+          key={block.id}
+          block={block}
+          messageStatus={status}
+          hasResult={block.type === 'tool_use' && blocks.some(b => b.type === 'tool_result' && b.toolName === block.toolName)}
+        />
       ))}
       {partial && blocks.length > 0 && (
         <StatusIndicator status={status} />

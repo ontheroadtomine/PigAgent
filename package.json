@@ -58,24 +58,28 @@
     "appId": "com.pigagent.app",
     "productName": "PigAgent",
     "electronDist": "./node_modules/electron/dist",
+    "icon": "resources/icon",
     "files": [
       "dist/**/*",
       "resources/**/*"
     ],
     "mac": {
       "category": "public.app-category.developer-tools",
+      "icon": "resources/icon.icns",
       "target": [
         "dmg",
         "zip"
       ]
     },
     "win": {
+      "icon": "resources/icon.ico",
       "target": [
         "nsis",
         "portable"
       ]
     },
     "linux": {
+      "icon": "resources/icon.png",
       "target": [
         "AppImage",
         "deb"

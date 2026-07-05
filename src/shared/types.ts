@@ -89,6 +89,7 @@ export interface Workspace {
   name: string;
   path: string;
   createdAt: number;
+  updatedAt?: number;
 }
 
 export interface Conversation {
@@ -169,6 +170,17 @@ export interface AgentMemory {
   }>;
 }
 
+export interface WorkspaceMemory {
+  projectSummary?: string;
+  filesTouched: AgentMemory['filesTouched'];
+  artifacts: AgentMemory['artifacts'];
+  decisions: Array<{
+    title: string;
+    summary: string;
+    timestamp: number;
+  }>;
+}
+
 export interface AgentContextMessage {
   role: 'user' | 'assistant';
   content: string;
@@ -177,6 +189,7 @@ export interface AgentContextMessage {
 export interface AgentContextPayload {
   recentMessages: AgentContextMessage[];
   memory: AgentMemory;
+  workspaceMemory?: WorkspaceMemory;
 }
 
 export type LlmApiChatEvent =

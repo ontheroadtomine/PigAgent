@@ -1,10 +1,10 @@
-import { ipcMain, BrowserWindow } from 'electron';
-import { IPC } from '../shared/ipc-channels';
+import { ipcMain, BrowserWindow, dialog, OpenDialogOptions } from 'electron';
+import { IPC, IPC_EVENTS } from '../shared/ipc-channels';
 import { agentRuntime } from './agent-runtime/runtime';
 import { providerRegistry } from './agent-runtime/provider-registry';
 import { prepareEnv } from './agent-runtime/execenv';
 import { SessionManager } from './session-manager';
-import { chatWithLlmApi, testLlmApi } from './llm-api';
+import { chatWithLlmApi, streamChatWithLlmApi, testLlmApi } from './llm-api';
 import { AgentContextPayload, AgentMessage, Conversation, LlmApiConfig, Workspace } from '../shared/types';
 import * as path from 'path';
 import * as os from 'os';
@@ -21,7 +21,7 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null) {
 
   // ---- Agent ----
   ipcMain.handle(IPC.AGENT_LIST, async () => {
-    return providerRegistry.list();
+    return providerRegistry.scan();
   });
 
   ipcMain.handle(IPC.AGENT_EXECUTE, async (event, params: {
@@ -64,8 +64,21 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null) {
     return sessionManager.listWorkspaces();
   });
 
+  ipcMain.handle(IPC.DIALOG_SELECT_DIRECTORY, async () => {
+    const mainWindow = getMainWindow();
+    const options: OpenDialogOptions = {
+      title: '选择工作目录',
+      properties: ['openDirectory', 'createDirectory'],
+    };
+    const result = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options);
+    if (result.canceled || !result.filePaths[0]) return null;
+    return result.filePaths[0];
+  });
+
   ipcMain.handle(IPC.WORKSPACE_ADD, async (event, { name, dirPath }: { name: string; dirPath: string }) => {
-    const ws: Workspace = { id: generateId(), name, path: dirPath, createdAt: Date.now() };
+    const ws: Workspace = { id: generateId(), name, path: dirPath, createdAt: Date.now(), updatedAt: Date.now() };
     sessionManager.addWorkspace(ws);
     return ws;
   });
@@ -84,6 +97,19 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null) {
     return sessionManager.listConversations(workspaceId);
   });
 
+  ipcMain.handle(IPC.CONVERSATION_UPDATE, async (event, { id, title }: { id: string; title: string }) => {
+    const trimmedTitle = title.trim();
+    if (!trimmedTitle) throw new Error('Conversation title is required');
+    const allConversations = sessionManager
+      .listWorkspaces()
+      .flatMap(workspace => sessionManager.listConversations(workspace.id));
+    const current = allConversations.find(conversation => conversation.id === id);
+    if (!current) throw new Error('Conversation not found');
+    const next: Conversation = { ...current, title: trimmedTitle, updatedAt: Date.now() };
+    sessionManager.updateConversation(id, next);
+    return next;
+  });
+
   // ---- Settings ----
   ipcMain.handle(IPC.SETTINGS_GET, async () => {
     return sessionManager.getSettings();
@@ -100,6 +126,28 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null) {
 
   ipcMain.handle(IPC.LLM_API_CHAT, async (event, { config, prompt, cwd, context }: { config: LlmApiConfig; prompt: string; cwd?: string; context?: AgentContextPayload }) => {
     return chatWithLlmApi(config, prompt, cwd, context);
+  });
+
+  ipcMain.handle(IPC.LLM_API_STREAM, async (event, {
+    streamId,
+    config,
+    prompt,
+    cwd,
+    context,
+  }: {
+    streamId: string;
+    config: LlmApiConfig;
+    prompt: string;
+    cwd?: string;
+    context?: AgentContextPayload;
+  }) => {
+    const sender = event.sender;
+    await streamChatWithLlmApi(config, prompt, cwd || process.cwd(), context, streamEvent => {
+      if (!sender.isDestroyed()) {
+        sender.send(IPC_EVENTS.LLM_API_STREAM_EVENT, { streamId, event: streamEvent });
+      }
+    });
+    return true;
   });
 
   // ---- File operations ----
