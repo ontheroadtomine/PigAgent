@@ -45,6 +45,10 @@ release/
 # Cache
 .cache/
 .eslintcache
+.codegraph/
+src/.codegraph/
+.nexa-reference/
 
 # Config local overrides
 config/*.local.*
+.claude/settings.local.json

@@ -1,8 +1,8 @@
-# PigAgent Agent Loop Architecture
+# Nexa Agent Loop Architecture
 
 ## Goal
 
-PigAgent now targets a Codex-style agent runtime rather than a plain chat wrapper. The model is only one component. The application owns the loop, tools, workspace access, command execution, observation, and final answer.
+Nexa now targets a Codex-style agent runtime rather than a plain chat wrapper. The model is only one component. The application owns the loop, tools, workspace access, command execution, observation, and final answer.
 
 ## Codex-Inspired Runtime Shape
 
@@ -15,7 +15,7 @@ Codex-like agents follow this pattern:
 5. Repeat until the model returns a final answer or a turn limit is reached.
 6. Verify work with commands/tests when files or behavior changed.
 
-PigAgent implements that same host-owned loop in `src/main/agent-core/loop.ts`.
+Nexa implements that same host-owned loop in `src/main/agent-core/loop.ts`.
 
 ## Implemented Components
 
@@ -48,7 +48,7 @@ PigAgent implements that same host-owned loop in `src/main/agent-core/loop.ts`.
 
 ## Current Capability Level
 
-PigAgent can now:
+Nexa can now:
 
 - answer realtime weather through tool use;
 - fetch public URLs when a URL is known;
@@ -72,10 +72,10 @@ node scripts/codex-reference-sync.mjs
 
 It maintains:
 
-- `.pigagent-reference/codex`: a shallow local reference checkout of OpenAI Codex.
+- `.nexa-reference/codex`: a shallow local reference checkout of OpenAI Codex.
 - `docs/codex-reference-lock.json`: the upstream commit, sync time, and watched source paths.
 
-When Codex updates, run the script, inspect the changed watched files, and map new behavior into PigAgent through adapters rather than copy-pasting into UI code.
+When Codex updates, run the script, inspect the changed watched files, and map new behavior into Nexa through adapters rather than copy-pasting into UI code.
 
 ## Update Workflow
 

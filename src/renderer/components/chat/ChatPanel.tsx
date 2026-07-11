@@ -96,7 +96,7 @@ export default function ChatPanel() {
         {messages.length === 0 && !isGenerating && (
           <div className="flex items-center justify-center h-full text-[var(--muted-foreground)]">
             <div className="text-center select-none">
-              <div className="text-sm font-medium text-[var(--foreground)]/20 mb-2">PigAgent</div>
+              <div className="text-sm font-medium text-[var(--foreground)]/20 mb-2">Nexa</div>
               <div className="text-[13px] text-[var(--muted-foreground)]/40">Ask anything — your CLI agent is ready</div>
             </div>
           </div>

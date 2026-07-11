@@ -13,7 +13,7 @@ export default function App() {
   if (!initialized) {
     return (
       <div className="h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-gray-400">Loading PigAgent...</div>
+        <div className="text-gray-400">Loading Nexa...</div>
       </div>
     );
   }

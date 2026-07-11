@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 const repoUrl = 'https://github.com/openai/codex.git';
 const root = process.cwd();
-const refDir = join(root, '.pigagent-reference');
+const refDir = join(root, '.nexa-reference');
 const repoDir = join(refDir, 'codex');
 const lockPath = join(root, 'docs', 'codex-reference-lock.json');
 

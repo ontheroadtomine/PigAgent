@@ -1,4 +1,4 @@
-# PigAgent — 跨平台 AI 编程助手 架构方案
+# Nexa — 跨平台 AI 编程助手 架构方案
 
 > 仿 Multica 方案：通过 CLI 工具的非交互式编程接口包装底层 Agent，前端使用 Electron + TypeScript 构建类 Cursor/Claude Code 体验。
 
@@ -310,7 +310,7 @@ async function detectProviders(): Promise<ProviderInfo[]> {
 // src/main/agent-runtime/execenv.ts
 
 interface ExecEnv {
-  rootDir: string;     // ~/pigagent/workspaces/{wsId}/{taskShortId}/
+  rootDir: string;     // ~/nexa/workspaces/{wsId}/{taskShortId}/
   workDir: string;     // envRoot/workdir/ 或用户指定的本地目录
   outputDir: string;   // envRoot/output/
   logsDir: string;     // envRoot/logs/
@@ -544,7 +544,7 @@ Agent 写文件
 ## 6. 项目目录结构
 
 ```
-PigAgent/
+Nexa/
 ├── package.json
 ├── electron.vite.config.ts
 ├── tsconfig.json

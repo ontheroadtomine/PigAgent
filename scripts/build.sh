@@ -1,11 +1,11 @@
 #!/bin/bash
-# PigAgent 构建脚本 - 构建主进程 + 渲染进程
+# Nexa 构建脚本 - 构建主进程 + 渲染进程
 
 set -e
 
 cd "$(dirname "$0")/.."
 
-echo "=== PigAgent Build ==="
+echo "=== Nexa Build ==="
 
 echo "[1/2] Building main process (TypeScript → dist/main)..."
 npx tsc -p config/tsconfig.main.json

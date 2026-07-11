@@ -32,6 +32,33 @@ html, body, #root {
   background: var(--background);
 }
 
+/* ── Electron window dragging ── */
+
+.app-drag {
+  -webkit-app-region: drag;
+}
+
+.app-no-drag,
+button,
+input,
+textarea,
+select,
+a,
+[role="button"],
+[data-no-drag="true"] {
+  -webkit-app-region: no-drag;
+}
+
+.window-drag-strip {
+  position: absolute;
+  top: 0;
+  left: 300px;
+  right: 0;
+  height: 28px;
+  z-index: 20;
+  -webkit-app-region: drag;
+}
+
 /* ── Scrollbar ── */
 
 .scrollbar-thin {

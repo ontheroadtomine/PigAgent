@@ -16,7 +16,7 @@ export interface PrepareParams {
 }
 
 export async function prepareEnv(params: PrepareParams): Promise<ExecEnv> {
-  const envRoot = path.join(params.workspacePath, '.pigagent', 'conversations', params.conversationId);
+  const envRoot = path.join(params.workspacePath, '.nexa', 'conversations', params.conversationId);
   const workDir = path.join(envRoot, 'workdir');
   const outputDir = path.join(envRoot, 'output');
   const logsDir = path.join(envRoot, 'logs');

@@ -1,4 +1,4 @@
-# PigAgent 打包脚本 (Windows PowerShell) - 跨平台打包为可执行文件
+# Nexa 打包脚本 (Windows PowerShell) - 跨平台打包为可执行文件
 #
 # 用法:
 #   .\scripts\pack.ps1              # 仅打包当前平台
@@ -27,7 +27,7 @@ if ($Target -eq "") {
   }
 }
 
-Write-Host "=== PigAgent Pack ==="
+Write-Host "=== Nexa Pack ==="
 Write-Host "Target: $Target"
 Write-Host ""
 

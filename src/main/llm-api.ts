@@ -6,7 +6,7 @@ import { createDefaultToolRegistry } from './agent-core/default-tools';
 import { AgentLoop, requestChatCompletion } from './agent-core/loop';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
-const AGENT_LOOP_TIMEOUT_MS = 600_000;
+const AGENT_LOOP_TIMEOUT_MS = 30 * 60_000;
 
 function expandHome(filePath: string): string {
   if (filePath === '~') return os.homedir();
@@ -33,7 +33,9 @@ function parseEnvFile(filePath?: string): Record<string, string> {
 }
 
 function resolveApiKey(config: LlmApiConfig): string {
-  if (config.apiKey?.trim()) return config.apiKey.trim();
+  const normalizeKey = (value: string): string => value.trim().replace(/^Bearer\s+/i, '').trim();
+
+  if (config.apiKey?.trim()) return normalizeKey(config.apiKey);
 
   const legacyConfig = config as LlmApiConfig & { envFile?: string; envVar?: string };
   const envFilePath = config.envFilePath || legacyConfig.envFile;
@@ -49,10 +51,13 @@ function resolveApiKey(config: LlmApiConfig): string {
 
   for (const name of candidates) {
     const value = envFile[name] || process.env[name];
-    if (value?.trim()) return value.trim();
+    if (value?.trim()) return normalizeKey(value);
   }
 
-  throw new Error(`Missing API key. Set ${candidates.join(' or ')} in the env file, or paste a key in settings.`);
+  if (candidates.length) {
+    throw new Error(`Missing API key. Set ${candidates.join(' or ')} in the env file, or paste a key in settings.`);
+  }
+  throw new Error('Missing API key. Paste a key in settings.');
 }
 
 export async function testLlmApi(config: LlmApiConfig): Promise<LlmApiTestResult> {

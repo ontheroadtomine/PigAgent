@@ -9,7 +9,7 @@ import { AgentContextPayload, AgentMessage, Conversation, LlmApiConfig, Workspac
 import * as path from 'path';
 import * as os from 'os';
 
-const configDir = path.join(os.homedir(), '.pigagent');
+const configDir = path.join(os.homedir(), '.nexa');
 let sessionManager: SessionManager;
 
 function generateId(): string {
@@ -164,6 +164,6 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null) {
 
   // Scan providers on startup
   providerRegistry.scan().then((providers) => {
-    console.log('[PigAgent] Detected providers:', providers.filter(p => p.available).map(p => p.name));
+    console.log('[Nexa] Detected providers:', providers.filter(p => p.available).map(p => p.name));
   });
 }

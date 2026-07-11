@@ -2,15 +2,15 @@ import { create } from 'zustand';
 import { Workspace, Conversation, AgentConfig, AppSettings, ChatMessage, ContentBlock, BridgeEvent, ExecutionStatus, LlmApiChatEvent, LlmApiChatResult, LlmApiConfig, AgentMemory, AgentContextPayload, AgentContextMessage, WorkspaceMemory } from '../../shared/types';
 
 const BRIDGE_URL = 'http://localhost:9876';
-const BROWSER_SETTINGS_KEY = 'pigagent.settings';
-const BROWSER_PROVIDER_KEY = 'pigagent.activeProvider';
-const BROWSER_MEMORY_KEY = 'pigagent.agentMemory';
-const BROWSER_WORKSPACES_KEY = 'pigagent.workspaces';
-const BROWSER_CONVERSATIONS_KEY = 'pigagent.conversations';
-const BROWSER_ACTIVE_WORKSPACE_KEY = 'pigagent.activeWorkspace';
-const BROWSER_ACTIVE_CONVERSATION_KEY = 'pigagent.activeConversation';
-const BROWSER_TRANSCRIPT_KEY = 'pigagent.transcript';
-const BROWSER_WORKSPACE_MEMORY_KEY = 'pigagent.workspaceMemory';
+const BROWSER_SETTINGS_KEY = 'nexa.settings';
+const BROWSER_PROVIDER_KEY = 'nexa.activeProvider';
+const BROWSER_MEMORY_KEY = 'nexa.agentMemory';
+const BROWSER_WORKSPACES_KEY = 'nexa.workspaces';
+const BROWSER_CONVERSATIONS_KEY = 'nexa.conversations';
+const BROWSER_ACTIVE_WORKSPACE_KEY = 'nexa.activeWorkspace';
+const BROWSER_ACTIVE_CONVERSATION_KEY = 'nexa.activeConversation';
+const BROWSER_TRANSCRIPT_KEY = 'nexa.transcript';
+const BROWSER_WORKSPACE_MEMORY_KEY = 'nexa.workspaceMemory';
 
 const defaultSettings: AppSettings = {
   theme: 'light',
@@ -23,8 +23,6 @@ const defaultSettings: AppSettings = {
       provider: 'deepseek',
       baseUrl: 'https://api.deepseek.com',
       model: 'deepseek-chat',
-      apiKeyEnvVar: 'DEEPSEEK_API_KEY',
-      envFilePath: '~/OpenClaw/my-openclaw-ops/.env',
       enabled: true,
     },
   ],
@@ -116,7 +114,7 @@ function loadBrowserWorkspaces(): Workspace[] {
     if (Array.isArray(saved) && saved.length) return saved;
   } catch { /* ignore */ }
   const now = Date.now();
-  return [{ id: 'ws1', name: 'PigAgent', path: '/Users/lapisy/PigAgent', createdAt: now, updatedAt: now }];
+  return [{ id: 'ws1', name: 'Nexa', path: '.', createdAt: now, updatedAt: now }];
 }
 
 function saveBrowserWorkspaces(workspaces: Workspace[]): void {
@@ -129,7 +127,7 @@ function loadBrowserConversations(): Conversation[] {
     if (Array.isArray(saved) && saved.length) return saved;
   } catch { /* ignore */ }
   const now = Date.now();
-  return [{ id: 'c1', workspaceId: 'ws1', title: 'PigAgent', createdAt: now, updatedAt: now, messageCount: 0 }];
+  return [{ id: 'c1', workspaceId: 'ws1', title: 'Nexa', createdAt: now, updatedAt: now, messageCount: 0 }];
 }
 
 function saveBrowserConversations(conversations: Conversation[]): void {
@@ -550,7 +548,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   workspaceMemory: defaultWorkspaceMemory,
 
   init: async () => {
-    if (typeof window.pigagent === 'undefined') {
+    if (typeof window.nexa === 'undefined') {
       let infos: ProviderInfo[] = [];
       try {
         const res = await fetch(`${BRIDGE_URL}/providers`);
@@ -595,13 +593,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     try {
       const [workspaces, settings, providers]: [Workspace[], AppSettings, ProviderInfo[]] = await Promise.all([
-        window.pigagent.listWorkspaces(),
-        window.pigagent.getSettings(),
-        window.pigagent.listProviders(),
+        window.nexa.listWorkspaces(),
+        window.nexa.getSettings(),
+        window.nexa.listProviders(),
       ]);
       const savedWorkspaceId = localStorage.getItem(BROWSER_ACTIVE_WORKSPACE_KEY);
       const activeWsId = workspaces.find(ws => ws.id === savedWorkspaceId)?.id || workspaces[0]?.id || null;
-      const allConvs: Conversation[] = (await Promise.all(workspaces.map(ws => window.pigagent.listConversations(ws.id)))).flat();
+      const allConvs: Conversation[] = (await Promise.all(workspaces.map(ws => window.nexa.listConversations(ws.id)))).flat();
       const activeWorkspaceConversations = allConvs.filter(conv => conv.workspaceId === activeWsId);
       const savedConversationId = localStorage.getItem(BROWSER_ACTIVE_CONVERSATION_KEY);
       const activeConversationId = activeWorkspaceConversations.find(conv => conv.id === savedConversationId)?.id || activeWorkspaceConversations[0]?.id || null;
@@ -628,8 +626,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   saveSettings: async (settings) => {
     const nextSettings = normalizeSettings(settings);
-    if (typeof window.pigagent !== 'undefined') {
-      await window.pigagent.saveSettings(nextSettings);
+    if (typeof window.nexa !== 'undefined') {
+      await window.nexa.saveSettings(nextSettings);
     } else {
       localStorage.setItem(BROWSER_SETTINGS_KEY, JSON.stringify(nextSettings));
     }
@@ -640,7 +638,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const now = Date.now();
     const workspaceName = name.trim() || basenamePath(dirPath);
     const defaultConversationTitle = workspaceName;
-    if (typeof window.pigagent === 'undefined') {
+    if (typeof window.nexa === 'undefined') {
       const ws: Workspace = { id: now.toString(36), name: workspaceName, path: dirPath, createdAt: now, updatedAt: now };
       const conv: Conversation = { id: `${ws.id}_c1`, workspaceId: ws.id, title: defaultConversationTitle, createdAt: now, updatedAt: now, messageCount: 0 };
       set(s => {
@@ -663,8 +661,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
       return ws;
     }
-    const ws = await window.pigagent.addWorkspace(workspaceName, dirPath);
-    const conv = await window.pigagent.createConversation(ws.id, ws.name || defaultConversationTitle);
+    const ws = await window.nexa.addWorkspace(workspaceName, dirPath);
+    const conv = await window.nexa.createConversation(ws.id, ws.name || defaultConversationTitle);
     set(s => ({
       workspaces: [ws, ...s.workspaces],
       conversations: [conv, ...s.conversations],
@@ -685,7 +683,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     saveStoredTranscript(state.activeConversationId, state.messages);
     localStorage.setItem(BROWSER_ACTIVE_WORKSPACE_KEY, id);
 
-    if (typeof window.pigagent === 'undefined') {
+    if (typeof window.nexa === 'undefined') {
       const allConversations = loadBrowserConversations();
       const workspaceConversations = allConversations.filter(conv => conv.workspaceId === id);
       let conversations = workspaceConversations;
@@ -710,7 +708,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
 
-    const conversations = await window.pigagent.listConversations(id);
+    const conversations = await window.nexa.listConversations(id);
     const activeConversationId = conversations[0]?.id || null;
     const mergedConversations = [
       ...state.conversations.filter(conv => conv.workspaceId !== id),
@@ -739,7 +737,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     saveStoredTranscript(previous.activeConversationId, previous.messages);
     const workspace = previous.workspaces.find(ws => ws.id === workspaceId);
     const conversationTitle = title.trim() || workspace?.name || 'New conversation';
-    if (typeof window.pigagent === 'undefined') {
+    if (typeof window.nexa === 'undefined') {
       const conv: Conversation = { id: Date.now().toString(36), workspaceId, title: conversationTitle, createdAt: Date.now(), updatedAt: Date.now(), messageCount: 0 };
       const allConversations = [...loadBrowserConversations(), conv];
       saveBrowserConversations(allConversations);
@@ -756,7 +754,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }));
       return conv;
     }
-    const conv = await window.pigagent.createConversation(workspaceId, conversationTitle);
+    const conv = await window.nexa.createConversation(workspaceId, conversationTitle);
     set(s => ({
       conversations: [conv, ...s.conversations.filter(existing => existing.id !== conv.id)],
       activeWorkspaceId: workspaceId,
@@ -772,8 +770,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   renameConversation: async (id, title) => {
     const nextTitle = title.trim();
     if (!nextTitle) return;
-    if (typeof window.pigagent !== 'undefined') {
-      await window.pigagent.renameConversation(id, nextTitle);
+    if (typeof window.nexa !== 'undefined') {
+      await window.nexa.renameConversation(id, nextTitle);
     } else {
       const allConversations = loadBrowserConversations().map(conversation =>
         conversation.id === id
@@ -834,8 +832,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       const context = get().buildAgentContext(prompt);
       set(updateAssistantFromLlmEvent(assistantId, { type: 'status', status: 'thinking', message: '分析任务' }));
       try {
-        if (typeof window.pigagent !== 'undefined') {
-          await window.pigagent.streamLlmApi(selectedLlmApi, prompt, cwd, context, (event: LlmApiChatEvent) => {
+        if (typeof window.nexa !== 'undefined') {
+          await window.nexa.streamLlmApi(selectedLlmApi, prompt, cwd, context, (event: LlmApiChatEvent) => {
             get().updateMemoryFromEvent(event);
             set(updateAssistantFromLlmEvent(assistantId, event));
           });
@@ -852,7 +850,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
 
-    if (typeof window.pigagent === 'undefined') {
+    if (typeof window.nexa === 'undefined') {
       const ws = state.workspaces.find(w => w.id === state.activeWorkspaceId);
       const cwd = ws?.path || process.cwd?.() || '/tmp';
       const assistantId = assistantMsg.id;
@@ -944,11 +942,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     const ws = state.workspaces.find(w => w.id === state.activeWorkspaceId);
     if (!ws || !state.activeConversationId) return;
 
-    window.pigagent.onAgentMessage((agentMsg: any) => {
+    window.nexa.onAgentMessage((agentMsg: any) => {
       set(s => ({ messages: [...s.messages, agentMsg] }));
     });
 
-    window.pigagent.execute({
+    window.nexa.execute({
       provider: state.activeProvider,
       prompt,
       workspacePath: ws.path,
@@ -1057,7 +1055,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setProvider: (provider) => {
-    if (typeof window.pigagent === 'undefined') {
+    if (typeof window.nexa === 'undefined') {
       localStorage.setItem(BROWSER_PROVIDER_KEY, provider);
     }
     set({ activeProvider: provider });

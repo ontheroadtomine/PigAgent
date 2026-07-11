@@ -79,6 +79,6 @@ const api = {
   },
 };
 
-contextBridge.exposeInMainWorld('pigagent', api);
+contextBridge.exposeInMainWorld('nexa', api);
 
-export type PigAgentApi = typeof api;
+export type NexaApi = typeof api;

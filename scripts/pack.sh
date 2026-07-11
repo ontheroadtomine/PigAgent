@@ -1,5 +1,5 @@
 #!/bin/bash
-# PigAgent 打包脚本 - 跨平台打包为可执行文件
+# Nexa 打包脚本 - 跨平台打包为可执行文件
 #
 # 用法:
 #   ./scripts/pack.sh              # 仅打包当前平台
@@ -23,7 +23,7 @@ detect_os() {
 
 TARGET="${1:-$(detect_os)}"
 
-echo "=== PigAgent Pack ==="
+echo "=== Nexa Pack ==="
 echo "Target: $TARGET"
 echo ""
 

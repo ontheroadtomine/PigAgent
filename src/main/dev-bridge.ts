@@ -426,5 +426,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[PigAgent Bridge] Listening on http://localhost:${PORT}`);
+  console.log(`[Nexa Bridge] Listening on http://localhost:${PORT}`);
 });

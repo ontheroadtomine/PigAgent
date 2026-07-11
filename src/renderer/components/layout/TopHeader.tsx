@@ -18,7 +18,7 @@ export default function TopHeader() {
         <span>Help</span>
       </div>
       <div className="flex-1 flex justify-center">
-        <span className="text-gray-500">PigAgent</span>
+        <span className="text-gray-500">Nexa</span>
       </div>
       <div className="flex items-center gap-3 text-gray-500">
         <button

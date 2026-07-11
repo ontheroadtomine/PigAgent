@@ -3,10 +3,14 @@ import { buildContextMessages } from './context-builder';
 import { ToolRegistry } from './tool-registry';
 import { AgentLoopOptions, AgentLoopResult, ChatMessageWire, ToolCallWire } from './types';
 
-const DEFAULT_MAX_TURNS = 20;
+const DEFAULT_TURN_BUDGET = 120;
 const DEFAULT_MODEL_ROUND_TIMEOUT_MS = 90_000;
 const MAX_LOOP_CONTEXT_CHARS = 140_000;
+const COMPACT_CONTEXT_CHARS = 110_000;
 const KEEP_RECENT_TOOL_RESULTS = 6;
+const KEEP_RECENT_LOOP_MESSAGES = 12;
+const MAX_NO_PROGRESS_TURNS = 4;
+const MAX_RECOVERY_ATTEMPTS = 3;
 
 class ModelRoundTimeoutError extends Error {
   constructor() {
@@ -72,11 +76,97 @@ function buildFallbackSummary(toolCalls: AgentLoopResult['toolCalls']): string {
   return lines.join('\n');
 }
 
+function buildBudgetSummary(toolCalls: AgentLoopResult['toolCalls'], reason: string): string {
+  const successful = toolCalls.filter(call => call.ok);
+  const failed = toolCalls.filter(call => !call.ok);
+  const lines = [
+    reason,
+    '',
+  ];
+
+  if (successful.length) {
+    lines.push('已完成的工具步骤：');
+    for (const call of successful.slice(-20)) {
+      lines.push(`- ${call.name}: ok`);
+    }
+    lines.push('');
+  }
+
+  if (failed.length) {
+    lines.push('失败或需要重试的工具步骤：');
+    for (const call of failed.slice(-10)) {
+      let detail = '';
+      try {
+        const parsed = call.output ? JSON.parse(call.output) : undefined;
+        detail = parsed?.error ? ` — ${parsed.error}` : '';
+      } catch { /* best effort */ }
+      lines.push(`- ${call.name}: failed${detail}`);
+    }
+    lines.push('');
+  }
+
+  lines.push('当前任务已停止在一个可恢复点。你可以继续追问，我会基于已记录的上下文接着做。');
+  return lines.join('\n').trim();
+}
+
 function estimateMessageChars(messages: ChatMessageWire[]): number {
   return messages.reduce((total, message) => {
     const toolCalls = message.tool_calls ? JSON.stringify(message.tool_calls).length : 0;
     return total + (message.content?.length || 0) + toolCalls;
   }, 0);
+}
+
+function summarizeToolLog(toolCalls: AgentLoopResult['toolCalls']): string {
+  if (!toolCalls.length) return 'No tools have been called yet.';
+  return toolCalls.slice(-30).map((call, index) => {
+    const output = call.output && call.output.length > 600
+      ? `${call.output.slice(0, 600)}\n[truncated ${call.output.length - 600} chars]`
+      : call.output || '';
+    return [
+      `${index + 1}. ${call.name} (${call.ok ? 'ok' : 'failed'})`,
+      `args: ${JSON.stringify(call.args)}`,
+      output ? `output: ${output}` : '',
+    ].filter(Boolean).join('\n');
+  }).join('\n\n');
+}
+
+function compactLoopMessages(messages: ChatMessageWire[], baseMessageCount: number, toolCallsLog: AgentLoopResult['toolCalls']): boolean {
+  if (estimateMessageChars(messages) <= COMPACT_CONTEXT_CHARS) return false;
+  const dynamicMessages = messages.slice(baseMessageCount);
+  if (dynamicMessages.length <= KEEP_RECENT_LOOP_MESSAGES) {
+    pruneOldToolResults(messages);
+    return true;
+  }
+
+  const keep = dynamicMessages.slice(-KEEP_RECENT_LOOP_MESSAGES);
+  while (keep.length && keep[0].role === 'tool') keep.shift();
+
+  const summary: ChatMessageWire = {
+    role: 'system',
+    content: [
+      'Compacted prior agent-loop state to keep the task running.',
+      'The user request is not complete unless the latest assistant response explicitly finalized it.',
+      'Continue from this state, using the recent messages and the tool log below as the source of truth.',
+      '',
+      summarizeToolLog(toolCallsLog),
+    ].join('\n'),
+  };
+
+  messages.splice(baseMessageCount, messages.length - baseMessageCount, summary, ...keep);
+  pruneOldToolResults(messages);
+  return true;
+}
+
+function toolCallSignature(toolCalls: ToolCallWire[]): string {
+  return toolCalls
+    .map(call => `${call.function.name}:${call.function.arguments}`)
+    .join('|')
+    .slice(0, 4_000);
+}
+
+function isAbortFromUser(error: unknown, signal?: AbortSignal): boolean {
+  const anyError = error as any;
+  return Boolean(signal?.aborted && anyError?.name === 'AbortError' && !isModelRoundTimeout(error));
 }
 
 function pruneOldToolResults(messages: ChatMessageWire[]): void {
@@ -218,13 +308,19 @@ async function requestChatCompletionStream(
 
 function buildSystemPrompt(): string {
   return [
-    'You are PigAgent, a Codex-style desktop software agent.',
+    'You are Nexa, a Codex-style desktop software agent.',
     'Operate in an agent loop: reason about the task, call tools when needed, observe results, and continue until the user request is actually complete.',
     'Use tools for current information, workspace inspection, codebase analysis, file edits, command execution, tests, builds, and patch application.',
+    'For time-sensitive questions such as today, latest, current, 2026, news, prices, laws, releases, or recent facts, use web_search or web_research first. Do not answer from training memory alone.',
+    'For known URLs, prefer web_open over web_fetch because it extracts readable text. Use browser_open when web_open returns too little content or the page appears to need JavaScript rendering.',
+    'For multi-source current research, use web_research and cite the source URLs in the final answer.',
     'For codebase documentation or architecture analysis, first use workspace_files or workspace_search, then file_read_many for the key files. Avoid reading files one by one when multiple files are needed.',
+    'For complex multi-step tasks, use plan_update to track progress. Use context_compact for long logs or large tool outputs before continuing.',
+    'If information is truly missing and guessing would be risky, use ask_user_question and then ask the user clearly in the final response.',
+    'When you create or change an important document, report, patch, or code artifact, use artifact_record before the final answer.',
     'Prefer reading the workspace before editing. Prefer focused shell commands and tests after edits.',
     'When you use a tool, summarize the result only when useful. Do not expose secrets.',
-    'For weather/current conditions, use weather_current. For public URLs, use web_fetch. For local code work, use workspace_files, workspace_search, file_read_many, workspace_list, file_read, file_write, apply_patch, and shell_exec.',
+    'For weather/current conditions, use weather_current. For public web work, use web_search, web_open, browser_open, web_research, or web_fetch. For local code work, use workspace_files, workspace_search, file_read_many, workspace_list, file_read, file_write, apply_patch, and shell_exec.',
     'Finish with a concise answer in the user language. If a tool failed, explain the actionable failure.',
   ].join('\n');
 }
@@ -241,15 +337,27 @@ export class AgentLoop {
   constructor(private readonly tools: ToolRegistry) {}
 
   async run(options: AgentLoopOptions): Promise<AgentLoopResult> {
-    const maxTurns = options.maxTurns || DEFAULT_MAX_TURNS;
+    const turnBudget = options.maxTurns || DEFAULT_TURN_BUDGET;
     const messages: ChatMessageWire[] = [
       { role: 'system', content: buildSystemPrompt() },
       ...buildContextMessages(options.context),
       { role: 'user', content: options.prompt },
     ];
+    const baseMessageCount = messages.length;
     const toolCallsLog: AgentLoopResult['toolCalls'] = [];
+    let consecutiveNoProgressTurns = 0;
+    let recoveryAttempts = 0;
+    let previousToolSignature = '';
 
-    for (let turn = 0; turn < maxTurns; turn += 1) {
+    for (let turn = 0; turn < turnBudget; turn += 1) {
+      if (compactLoopMessages(messages, baseMessageCount, toolCallsLog)) {
+        options.onEvent?.({
+          type: 'status',
+          status: 'thinking',
+          message: '上下文较长，已压缩早期步骤并继续执行',
+        });
+      }
+
       options.onEvent?.({
         type: 'status',
         status: turn === 0 ? 'thinking' : 'streaming',
@@ -272,7 +380,25 @@ export class AgentLoop {
           options.onEvent?.({ type: 'text_delta', delta });
         });
       } catch (error) {
+        if (isAbortFromUser(error, options.signal)) throw error;
         if (isModelRoundTimeout(error) && toolCallsLog.some(call => call.ok)) {
+          if (recoveryAttempts < MAX_RECOVERY_ATTEMPTS) {
+            recoveryAttempts += 1;
+            messages.push({
+              role: 'system',
+              content: [
+                'The previous model round timed out after tools had already produced results.',
+                'Do not repeat completed inspection work unless necessary.',
+                'Continue with a concise final or next-step answer based on the available tool results.',
+              ].join('\n'),
+            });
+            options.onEvent?.({
+              type: 'status',
+              status: 'thinking',
+              message: `模型本轮超时，正在基于已有工具结果恢复（${recoveryAttempts}/${MAX_RECOVERY_ATTEMPTS}）`,
+            });
+            continue;
+          }
           const fallback = buildFallbackSummary(toolCallsLog);
           if (!startedText) options.onEvent?.({ type: 'text_start' });
           options.onEvent?.({ type: 'text_delta', delta: fallback });
@@ -285,10 +411,45 @@ export class AgentLoop {
 
       const message = { content: data.content };
       const toolCalls: ToolCallWire[] = data.toolCalls || [];
+      const hasTextProgress = Boolean(data.content?.trim());
 
       if (toolCalls.length === 0) {
         const content = message?.content?.trim() || '';
         return { content, turns: turn + 1, toolCalls: toolCallsLog };
+      }
+
+      const signature = toolCallSignature(toolCalls);
+      const repeatedToolPlan = Boolean(signature && signature === previousToolSignature);
+      previousToolSignature = signature;
+      if (!hasTextProgress && repeatedToolPlan) {
+        consecutiveNoProgressTurns += 1;
+      } else {
+        consecutiveNoProgressTurns = 0;
+      }
+
+      if (consecutiveNoProgressTurns >= MAX_NO_PROGRESS_TURNS) {
+        if (recoveryAttempts < MAX_RECOVERY_ATTEMPTS) {
+          recoveryAttempts += 1;
+          consecutiveNoProgressTurns = 0;
+          messages.push({
+            role: 'system',
+            content: [
+              'You are repeating the same tool plan without visible progress.',
+              'Stop repeating the same calls. Summarize what is known, identify the missing piece, and either call a different tool or provide the final answer.',
+            ].join('\n'),
+          });
+          options.onEvent?.({
+            type: 'status',
+            status: 'thinking',
+            message: `检测到重复工具计划，正在调整执行路径（${recoveryAttempts}/${MAX_RECOVERY_ATTEMPTS}）`,
+          });
+          continue;
+        }
+
+        const fallback = buildBudgetSummary(toolCallsLog, 'Agent 连续多轮重复相同工具计划，已自动停止以避免无效循环。');
+        if (!startedText) options.onEvent?.({ type: 'text_start' });
+        options.onEvent?.({ type: 'text_delta', delta: fallback });
+        return { content: fallback, turns: turn + 1, toolCalls: toolCallsLog };
       }
 
       messages.push({
@@ -320,7 +481,13 @@ export class AgentLoop {
       }
     }
 
-    throw new Error(`Agent loop reached max turns (${maxTurns}).`);
+    const fallback = buildBudgetSummary(
+      toolCallsLog,
+      `Agent 已达到本次运行预算（${turnBudget} 个模型/工具回合），已在可恢复点停止。`,
+    );
+    options.onEvent?.({ type: 'text_start' });
+    options.onEvent?.({ type: 'text_delta', delta: fallback });
+    return { content: fallback, turns: turnBudget, toolCalls: toolCallsLog };
   }
 }
 

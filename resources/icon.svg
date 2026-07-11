@@ -1,15 +1,55 @@
-<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="512" height="512" rx="112" fill="#17151F"/>
-  <path d="M120 178C120 135.474 154.474 101 197 101H315C357.526 101 392 135.474 392 178V334C392 376.526 357.526 411 315 411H197C154.474 411 120 376.526 120 334V178Z" fill="#F7F7FA"/>
-  <path d="M166 186C166 164.461 183.461 147 205 147H307C328.539 147 346 164.461 346 186V326C346 347.539 328.539 365 307 365H205C183.461 365 166 347.539 166 326V186Z" fill="#17151F"/>
-  <path d="M208 223C208 207.536 220.536 195 236 195H276C291.464 195 304 207.536 304 223V289C304 304.464 291.464 317 276 317H236C220.536 317 208 304.464 208 289V223Z" fill="#8B5CF6"/>
-  <path d="M238 239L254 255L238 271" stroke="#F7F7FA" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M267 274H291" stroke="#F7F7FA" stroke-width="16" stroke-linecap="round"/>
-  <circle cx="205" cy="178" r="16" fill="#34D399"/>
-  <circle cx="307" cy="178" r="16" fill="#60A5FA"/>
-  <path d="M120 282H166" stroke="#F7F7FA" stroke-width="24" stroke-linecap="round"/>
-  <path d="M346 282H392" stroke="#F7F7FA" stroke-width="24" stroke-linecap="round"/>
-  <path d="M212 411V448" stroke="#F7F7FA" stroke-width="24" stroke-linecap="round"/>
-  <path d="M300 411V448" stroke="#F7F7FA" stroke-width="24" stroke-linecap="round"/>
-  <path d="M184 448H328" stroke="#F7F7FA" stroke-width="24" stroke-linecap="round"/>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>Nexa app icon</title>
+  <defs>
+    <linearGradient id="card" x1="156" y1="116" x2="868" y2="908" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F8FEFF"/>
+      <stop offset="0.54" stop-color="#E9F9F7"/>
+      <stop offset="1" stop-color="#DDF4F7"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="294" y1="278" x2="730" y2="746" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0891B2"/>
+      <stop offset="0.5" stop-color="#14B8A6"/>
+      <stop offset="1" stop-color="#38BDF8"/>
+    </linearGradient>
+    <linearGradient id="node" x1="302" y1="290" x2="722" y2="734" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#ECFEFF"/>
+    </linearGradient>
+    <filter id="cardShadow" x="104" y="104" width="816" height="816" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="24" stdDeviation="36" flood-color="#0F766E" flood-opacity="0.18"/>
+    </filter>
+    <filter id="markShadow" x="232" y="232" width="560" height="560" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#0E7490" flood-opacity="0.24"/>
+    </filter>
+  </defs>
+
+  <rect x="112" y="112" width="800" height="800" rx="192" fill="url(#card)" filter="url(#cardShadow)"/>
+  <rect x="144" y="144" width="736" height="736" rx="166" stroke="#FFFFFF" stroke-width="28" opacity="0.82"/>
+
+  <g opacity="0.42">
+    <path d="M220 352C319 248 437 202 574 216C669 226 746 262 808 324" stroke="#BFEFEB" stroke-width="22" stroke-linecap="round"/>
+    <path d="M216 684C317 778 437 818 572 802C686 788 770 739 824 664" stroke="#BFEFEB" stroke-width="22" stroke-linecap="round"/>
+  </g>
+
+  <g filter="url(#markShadow)">
+    <path d="M350 700V324" stroke="url(#mark)" stroke-width="58" stroke-linecap="round"/>
+    <path d="M674 324V700" stroke="url(#mark)" stroke-width="58" stroke-linecap="round"/>
+    <path d="M350 324L674 700" stroke="url(#mark)" stroke-width="58" stroke-linecap="round"/>
+  </g>
+
+  <g>
+    <circle cx="350" cy="324" r="58" fill="url(#node)" stroke="#B6F0EA" stroke-width="10"/>
+    <circle cx="674" cy="324" r="58" fill="url(#node)" stroke="#BAE6FD" stroke-width="10"/>
+    <circle cx="350" cy="700" r="58" fill="url(#node)" stroke="#B6F0EA" stroke-width="10"/>
+    <circle cx="674" cy="700" r="58" fill="url(#node)" stroke="#BAE6FD" stroke-width="10"/>
+    <circle cx="512" cy="512" r="72" fill="url(#node)" stroke="#99F6E4" stroke-width="18"/>
+  </g>
+
+  <g>
+    <circle cx="350" cy="324" r="17" fill="#0E7490"/>
+    <circle cx="674" cy="324" r="17" fill="#0284C7"/>
+    <circle cx="350" cy="700" r="17" fill="#0D9488"/>
+    <circle cx="674" cy="700" r="17" fill="#0891B2"/>
+    <circle cx="512" cy="512" r="18" fill="#14B8A6"/>
+  </g>
 </svg>

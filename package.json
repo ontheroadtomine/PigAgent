@@ -1,7 +1,7 @@
 {
-  "name": "pigagent",
+  "name": "nexa",
   "version": "1.0.0",
-  "description": "AI coding assistant powered by CLI agents",
+  "description": "A desktop coding agent that connects models, tools, local workspaces, and long-running software tasks.",
   "main": "dist/main/main/index.js",
   "scripts": {
     "dev": "concurrently \"npm run dev:main\" \"npm run dev:renderer\"",
@@ -23,8 +23,24 @@
     "dist:linux": "npm run build && electron-builder --linux",
     "codex:sync-reference": "node scripts/codex-reference-sync.mjs"
   },
-  "keywords": [],
+  "keywords": [
+    "agent",
+    "coding-agent",
+    "electron",
+    "react",
+    "llm",
+    "openai-compatible",
+    "developer-tools"
+  ],
   "author": "",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/nexa.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-org/nexa/issues"
+  },
+  "homepage": "https://github.com/your-org/nexa#readme",
   "license": "ISC",
   "dependencies": {
     "@monaco-editor/react": "^4.6.0",
@@ -55,8 +71,8 @@
     "vite": "^5.4.0"
   },
   "build": {
-    "appId": "com.pigagent.app",
-    "productName": "PigAgent",
+    "appId": "com.nexa.app",
+    "productName": "Nexa",
     "electronDist": "./node_modules/electron/dist",
     "icon": "resources/icon",
     "files": [

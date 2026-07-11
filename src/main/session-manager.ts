@@ -13,8 +13,6 @@ const defaultSettings: AppSettings = {
       provider: 'deepseek',
       baseUrl: 'https://api.deepseek.com',
       model: 'deepseek-chat',
-      apiKeyEnvVar: 'DEEPSEEK_API_KEY',
-      envFilePath: '~/OpenClaw/my-openclaw-ops/.env',
       enabled: true,
     },
   ],

@@ -8,40 +8,40 @@ const defaultDeepSeekConfig: LlmApiConfig = {
   provider: 'deepseek',
   baseUrl: 'https://api.deepseek.com',
   model: 'deepseek-chat',
-  apiKeyEnvVar: 'DEEPSEEK_API_KEY',
-  envFilePath: '~/OpenClaw/my-openclaw-ops/.env',
   enabled: true,
 };
 
 const modelPresets: LlmApiConfig[] = [
   defaultDeepSeekConfig,
-  { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner', provider: 'deepseek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-reasoner', apiKeyEnvVar: 'DEEPSEEK_API_KEY', envFilePath: '~/OpenClaw/my-openclaw-ops/.env', enabled: true },
-  { id: 'openai-gpt-4o', name: 'OpenAI GPT-4o', provider: 'openai-compatible', baseUrl: 'https://api.openai.com', model: 'gpt-4o', apiKeyEnvVar: 'OPENAI_API_KEY', enabled: true },
-  { id: 'openai-gpt-4-1', name: 'OpenAI GPT-4.1', provider: 'openai-compatible', baseUrl: 'https://api.openai.com', model: 'gpt-4.1', apiKeyEnvVar: 'OPENAI_API_KEY', enabled: true },
-  { id: 'openai-o3', name: 'OpenAI o3', provider: 'openai-compatible', baseUrl: 'https://api.openai.com', model: 'o3', apiKeyEnvVar: 'OPENAI_API_KEY', enabled: true },
-  { id: 'openai-o4-mini', name: 'OpenAI o4-mini', provider: 'openai-compatible', baseUrl: 'https://api.openai.com', model: 'o4-mini', apiKeyEnvVar: 'OPENAI_API_KEY', enabled: true },
-  { id: 'anthropic-openrouter-sonnet', name: 'Claude Sonnet (OpenRouter)', provider: 'openai-compatible', baseUrl: 'https://openrouter.ai/api', model: 'anthropic/claude-sonnet-4', apiKeyEnvVar: 'OPENROUTER_API_KEY', enabled: true },
-  { id: 'anthropic-openrouter-opus', name: 'Claude Opus (OpenRouter)', provider: 'openai-compatible', baseUrl: 'https://openrouter.ai/api', model: 'anthropic/claude-opus-4', apiKeyEnvVar: 'OPENROUTER_API_KEY', enabled: true },
-  { id: 'xai-grok', name: 'xAI Grok', provider: 'openai-compatible', baseUrl: 'https://api.x.ai', model: 'grok-3', apiKeyEnvVar: 'XAI_API_KEY', enabled: true },
-  { id: 'gemini-2-5-pro', name: 'Gemini 2.5 Pro', provider: 'openai-compatible', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', model: 'gemini-2.5-pro', apiKeyEnvVar: 'GEMINI_API_KEY', enabled: true },
-  { id: 'gemini-2-5-flash', name: 'Gemini 2.5 Flash', provider: 'openai-compatible', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', model: 'gemini-2.5-flash', apiKeyEnvVar: 'GEMINI_API_KEY', enabled: true },
-  { id: 'mistral-large', name: 'Mistral Large', provider: 'openai-compatible', baseUrl: 'https://api.mistral.ai', model: 'mistral-large-latest', apiKeyEnvVar: 'MISTRAL_API_KEY', enabled: true },
-  { id: 'perplexity-sonar', name: 'Perplexity Sonar', provider: 'openai-compatible', baseUrl: 'https://api.perplexity.ai', model: 'sonar-pro', apiKeyEnvVar: 'PERPLEXITY_API_KEY', enabled: true },
-  { id: 'together-llama', name: 'Together Llama', provider: 'openai-compatible', baseUrl: 'https://api.together.xyz', model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', apiKeyEnvVar: 'TOGETHER_API_KEY', enabled: true },
-  { id: 'qwen-max', name: 'Qwen Max', provider: 'openai-compatible', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode', model: 'qwen-max', apiKeyEnvVar: 'DASHSCOPE_API_KEY', enabled: true },
-  { id: 'qwen-plus', name: 'Qwen Plus', provider: 'openai-compatible', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode', model: 'qwen-plus', apiKeyEnvVar: 'DASHSCOPE_API_KEY', enabled: true },
-  { id: 'kimi-k2', name: 'Moonshot Kimi K2', provider: 'openai-compatible', baseUrl: 'https://api.moonshot.cn', model: 'kimi-k2-0711-preview', apiKeyEnvVar: 'MOONSHOT_API_KEY', enabled: true },
-  { id: 'kimi-latest', name: 'Moonshot Kimi Latest', provider: 'openai-compatible', baseUrl: 'https://api.moonshot.cn', model: 'moonshot-v1-128k', apiKeyEnvVar: 'MOONSHOT_API_KEY', enabled: true },
-  { id: 'minimax-m3', name: 'MiniMax M3', provider: 'openai-compatible', baseUrl: 'https://api.minimax.io/v1', model: 'MiniMax-M3', apiKeyEnvVar: 'MINIMAX_API_KEY', enabled: true },
-  { id: 'minimax-m25', name: 'MiniMax M2.5', provider: 'openai-compatible', baseUrl: 'https://api.minimax.io/v1', model: 'MiniMax-M2.5', apiKeyEnvVar: 'MINIMAX_API_KEY', enabled: true },
-  { id: 'minimax-m1', name: 'MiniMax M1', provider: 'openai-compatible', baseUrl: 'https://api.minimax.io/v1', model: 'MiniMax-M1', apiKeyEnvVar: 'MINIMAX_API_KEY', enabled: true },
-  { id: 'zhipu-glm-4', name: 'Zhipu GLM-4', provider: 'openai-compatible', baseUrl: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', model: 'glm-4-plus', apiKeyEnvVar: 'ZHIPUAI_API_KEY', enabled: true },
-  { id: 'doubao-pro', name: 'Doubao Pro', provider: 'openai-compatible', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3/chat/completions', model: 'doubao-pro-32k', apiKeyEnvVar: 'ARK_API_KEY', enabled: true },
-  { id: 'yi-large', name: 'Yi Large', provider: 'openai-compatible', baseUrl: 'https://api.lingyiwanwu.com', model: 'yi-large', apiKeyEnvVar: 'YI_API_KEY', enabled: true },
-  { id: 'groq-llama', name: 'Groq Llama', provider: 'openai-compatible', baseUrl: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile', apiKeyEnvVar: 'GROQ_API_KEY', enabled: true },
-  { id: 'siliconflow-qwen', name: 'SiliconFlow Qwen', provider: 'openai-compatible', baseUrl: 'https://api.siliconflow.cn/v1', model: 'Qwen/Qwen2.5-72B-Instruct', apiKeyEnvVar: 'SILICONFLOW_API_KEY', enabled: true },
-  { id: 'openrouter-auto', name: 'OpenRouter Auto', provider: 'openai-compatible', baseUrl: 'https://openrouter.ai/api', model: 'openrouter/auto', apiKeyEnvVar: 'OPENROUTER_API_KEY', enabled: true },
-  { id: 'ollama-local', name: 'Ollama Local', provider: 'openai-compatible', baseUrl: 'http://localhost:11434/v1', model: 'llama3.1', apiKeyEnvVar: 'OLLAMA_API_KEY', enabled: true },
+  { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner', provider: 'deepseek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-reasoner', enabled: true },
+  { id: 'openai-gpt-4o', name: 'OpenAI GPT-4o', provider: 'openai-compatible', baseUrl: 'https://api.openai.com', model: 'gpt-4o', enabled: true },
+  { id: 'openai-gpt-4-1', name: 'OpenAI GPT-4.1', provider: 'openai-compatible', baseUrl: 'https://api.openai.com', model: 'gpt-4.1', enabled: true },
+  { id: 'openai-o3', name: 'OpenAI o3', provider: 'openai-compatible', baseUrl: 'https://api.openai.com', model: 'o3', enabled: true },
+  { id: 'openai-o4-mini', name: 'OpenAI o4-mini', provider: 'openai-compatible', baseUrl: 'https://api.openai.com', model: 'o4-mini', enabled: true },
+  { id: 'anthropic-openrouter-sonnet', name: 'Claude Sonnet (OpenRouter)', provider: 'openai-compatible', baseUrl: 'https://openrouter.ai/api', model: 'anthropic/claude-sonnet-4', enabled: true },
+  { id: 'anthropic-openrouter-opus', name: 'Claude Opus (OpenRouter)', provider: 'openai-compatible', baseUrl: 'https://openrouter.ai/api', model: 'anthropic/claude-opus-4', enabled: true },
+  { id: 'xai-grok', name: 'xAI Grok', provider: 'openai-compatible', baseUrl: 'https://api.x.ai', model: 'grok-3', enabled: true },
+  { id: 'gemini-2-5-pro', name: 'Gemini 2.5 Pro', provider: 'openai-compatible', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', model: 'gemini-2.5-pro', enabled: true },
+  { id: 'gemini-2-5-flash', name: 'Gemini 2.5 Flash', provider: 'openai-compatible', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', model: 'gemini-2.5-flash', enabled: true },
+  { id: 'mistral-large', name: 'Mistral Large', provider: 'openai-compatible', baseUrl: 'https://api.mistral.ai', model: 'mistral-large-latest', enabled: true },
+  { id: 'perplexity-sonar', name: 'Perplexity Sonar', provider: 'openai-compatible', baseUrl: 'https://api.perplexity.ai', model: 'sonar-pro', enabled: true },
+  { id: 'together-llama', name: 'Together Llama', provider: 'openai-compatible', baseUrl: 'https://api.together.xyz', model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', enabled: true },
+  { id: 'qwen-max', name: 'Qwen Max', provider: 'openai-compatible', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode', model: 'qwen-max', enabled: true },
+  { id: 'qwen-plus', name: 'Qwen Plus', provider: 'openai-compatible', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode', model: 'qwen-plus', enabled: true },
+  { id: 'kimi-k2', name: 'Moonshot Kimi K2', provider: 'openai-compatible', baseUrl: 'https://api.moonshot.cn', model: 'kimi-k2-0711-preview', enabled: true },
+  { id: 'kimi-latest', name: 'Moonshot Kimi Latest', provider: 'openai-compatible', baseUrl: 'https://api.moonshot.cn', model: 'moonshot-v1-128k', enabled: true },
+  { id: 'minimax-m3', name: 'MiniMax M3', provider: 'openai-compatible', baseUrl: 'https://api.minimax.io/v1', model: 'MiniMax-M3', enabled: true },
+  { id: 'minimax-m25', name: 'MiniMax M2.5', provider: 'openai-compatible', baseUrl: 'https://api.minimax.io/v1', model: 'MiniMax-M2.5', enabled: true },
+  { id: 'minimax-m1', name: 'MiniMax M1', provider: 'openai-compatible', baseUrl: 'https://api.minimax.io/v1', model: 'MiniMax-M1', enabled: true },
+  { id: 'minimax-cn-m3', name: 'MiniMax CN M3', provider: 'openai-compatible', baseUrl: 'https://api.minimaxi.com/v1', model: 'MiniMax-M3', enabled: true },
+  { id: 'minimax-cn-m25', name: 'MiniMax CN M2.5', provider: 'openai-compatible', baseUrl: 'https://api.minimaxi.com/v1', model: 'MiniMax-M2.5', enabled: true },
+  { id: 'zhipu-glm-4', name: 'Zhipu GLM-4', provider: 'openai-compatible', baseUrl: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', model: 'glm-4-plus', enabled: true },
+  { id: 'doubao-pro', name: 'Doubao Pro', provider: 'openai-compatible', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3/chat/completions', model: 'doubao-pro-32k', enabled: true },
+  { id: 'yi-large', name: 'Yi Large', provider: 'openai-compatible', baseUrl: 'https://api.lingyiwanwu.com', model: 'yi-large', enabled: true },
+  { id: 'groq-llama', name: 'Groq Llama', provider: 'openai-compatible', baseUrl: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile', enabled: true },
+  { id: 'siliconflow-qwen', name: 'SiliconFlow Qwen', provider: 'openai-compatible', baseUrl: 'https://api.siliconflow.cn/v1', model: 'Qwen/Qwen2.5-72B-Instruct', enabled: true },
+  { id: 'openrouter-auto', name: 'OpenRouter Auto', provider: 'openai-compatible', baseUrl: 'https://openrouter.ai/api', model: 'openrouter/auto', enabled: true },
+  { id: 'ollama-local', name: 'Ollama Local', provider: 'openai-compatible', baseUrl: 'http://localhost:11434/v1', model: 'llama3.1', enabled: true },
 ];
 
 async function testLlmApiInBrowser(config: LlmApiConfig): Promise<LlmApiTestResult> {
@@ -104,11 +104,17 @@ function mergeScannedAgents(currentAgents: AgentConfig[], providers: ProviderInf
   return next;
 }
 
+function localOnlyLlmApi(config: LlmApiConfig): LlmApiConfig {
+  const { apiKeyEnvVar, envFilePath, ...localConfig } = config;
+  return localConfig;
+}
+
 export default function SettingsModal() {
   const { settings, toggleSettings, saveSettings } = useAppStore();
   const [agents, setAgents] = useState<AgentConfig[]>(settings.agents);
-  const [llmApis, setLlmApis] = useState<LlmApiConfig[]>(settings.llmApis?.length ? settings.llmApis : [defaultDeepSeekConfig]);
+  const [llmApis, setLlmApis] = useState<LlmApiConfig[]>((settings.llmApis?.length ? settings.llmApis : [defaultDeepSeekConfig]).map(localOnlyLlmApi));
   const [selectedLlmId, setSelectedLlmId] = useState((settings.llmApis?.[0] || defaultDeepSeekConfig).id);
+  const [showApiKey, setShowApiKey] = useState(false);
   const [addingAgent, setAddingAgent] = useState(false);
   const [saving, setSaving] = useState(false);
   const [scanningAgents, setScanningAgents] = useState(false);
@@ -142,7 +148,7 @@ export default function SettingsModal() {
   const handleAddPreset = (preset: LlmApiConfig) => {
     setLlmApis(prev => {
       if (prev.some(api => api.id === preset.id)) return prev;
-      return [...prev, { ...preset }];
+      return [...prev, localOnlyLlmApi(preset)];
     });
     setSelectedLlmId(preset.id);
   };
@@ -159,7 +165,7 @@ export default function SettingsModal() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await saveSettings({ ...settings, agents, llmApis });
+      await saveSettings({ ...settings, agents, llmApis: llmApis.map(localOnlyLlmApi) });
       toggleSettings();
     } finally {
       setSaving(false);
@@ -174,12 +180,12 @@ export default function SettingsModal() {
       return next;
     });
     try {
-      if (typeof window.pigagent === 'undefined') {
+      if (typeof window.nexa === 'undefined') {
         const result = await testLlmApiInBrowser(config);
         setTestResults(prev => ({ ...prev, [config.id]: result }));
         return;
       }
-      const result = await window.pigagent.testLlmApi(config);
+      const result = await window.nexa.testLlmApi(config);
       setTestResults(prev => ({ ...prev, [config.id]: result }));
     } catch (error: any) {
       setTestResults(prev => ({ ...prev, [config.id]: {
@@ -198,9 +204,9 @@ export default function SettingsModal() {
     setScanningAgents(true);
     setScanMessage(null);
     try {
-      const providers: ProviderInfo[] = typeof window.pigagent === 'undefined'
+      const providers: ProviderInfo[] = typeof window.nexa === 'undefined'
         ? await scanProvidersInBrowser()
-        : await window.pigagent.listProviders();
+        : await window.nexa.listProviders();
       const available = providers.filter(provider => provider.available);
       setAgents(prev => mergeScannedAgents(prev, providers));
       const names = available.map(provider => providerDisplayName(provider.name)).join(', ');
@@ -279,7 +285,7 @@ export default function SettingsModal() {
               <div className="rounded-lg border border-gray-200 bg-white p-3">
                 <div className="mb-2 flex items-center justify-between">
                   <span className="text-xs font-medium text-gray-600">Model presets</span>
-                  <span className="text-[10px] text-gray-400">API keys are still configured per provider.</span>
+                  <span className="text-[10px] text-gray-400">API keys are saved locally in this app.</span>
                 </div>
                 <div className="max-h-44 overflow-y-auto pr-1 scrollbar-thin">
                   {Object.entries(groupedPresets).map(([group, presets]) => (
@@ -376,34 +382,25 @@ export default function SettingsModal() {
                         placeholder="gpt-4o"
                       />
                     </div>
-                    <div>
-                      <label className="text-xs text-gray-500 mb-1 block">Env file</label>
-                      <input
-                        type="text"
-                        value={selectedLlm.envFilePath || ''}
-                        onChange={e => updateLlmApi(selectedLlm.id, { envFilePath: e.target.value })}
-                        className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-xs outline-none focus:border-purple-500 font-mono"
-                        placeholder="Optional .env path"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-500 mb-1 block">API key env</label>
-                      <input
-                        type="text"
-                        value={selectedLlm.apiKeyEnvVar || ''}
-                        onChange={e => updateLlmApi(selectedLlm.id, { apiKeyEnvVar: e.target.value })}
-                        className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-xs outline-none focus:border-purple-500 font-mono"
-                        placeholder="OPENAI_API_KEY"
-                      />
-                    </div>
                     <div className="col-span-2">
-                      <label className="text-xs text-gray-500 mb-1 block">API key override</label>
+                      <div className="mb-1 flex items-center justify-between">
+                        <label className="text-xs text-gray-500 block">API key</label>
+                        <button
+                          type="button"
+                          onClick={() => setShowApiKey(value => !value)}
+                          className="text-[11px] text-gray-400 hover:text-gray-700"
+                        >
+                          {showApiKey ? 'Hide' : 'Show'}
+                        </button>
+                      </div>
                       <input
-                        type="password"
+                        type={showApiKey ? 'text' : 'password'}
                         value={selectedLlm.apiKey || ''}
                         onChange={e => updateLlmApi(selectedLlm.id, { apiKey: e.target.value })}
                         className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-xs outline-none focus:border-purple-500 font-mono"
-                        placeholder="Leave blank to read from env file or environment"
+                        placeholder="Paste API key. It will be saved locally."
+                        autoComplete="off"
+                        spellCheck={false}
                       />
                     </div>
                   </div>

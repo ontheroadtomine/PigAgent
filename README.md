@@ -1,117 +1,98 @@
 <p align="center">
-  <img src="resources/icon.svg" width="96" height="96" alt="PigAgent logo" />
+  <img src="resources/icon.svg" width="96" height="96" alt="Nexa logo" />
 </p>
 
-<h1 align="center">PigAgent</h1>
+<h1 align="center">Nexa</h1>
 
 <p align="center">
-  A desktop coding agent for long-running software work, workspace-aware conversations, and tool-driven development.
+  A desktop coding agent that connects models, tools, local workspaces, and long-running software tasks.
 </p>
 
 <p align="center">
-  <a href="README.zh-CN.md">中文</a> · <a href="docs/context-management-design.md">Context Design</a> · <a href="docs/workspace-conversation-context-design.md">Workspace Design</a>
+  <a href="README.zh-CN.md">中文</a> ·
+  <a href="docs/README.md">Docs</a> ·
+  <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
 ## Overview
 
-PigAgent is an Electron + React desktop application that wraps coding agents and large-model APIs behind a focused chat interface. It is designed for real project work: each workspace has its own conversations, memory, transcripts, tool history, and artifacts.
+Nexa is an Electron + React desktop agent for real software work. It brings together OpenAI-compatible model APIs, local CLI agents, workspace-aware context, tool calls, streaming output, task queues, and Markdown-rich responses in one focused interface.
 
-The project currently supports OpenAI-compatible LLM APIs such as DeepSeek, local CLI-agent bridges, streaming assistant output, tool calls, workspace-aware context, Markdown rendering, Mermaid diagrams, and queued follow-up tasks.
+The goal is not to build another plain chat wrapper. Nexa owns the agent loop: it lets the model plan, call tools, observe results, recover from long tasks, and produce final answers grounded in local workspace state.
 
-## Highlights
+## Features
 
-- **Workspace-first UX**: add local directories as workspaces and create multiple conversations under each workspace.
-- **Context-aware conversations**: workspace memory and conversation memory are injected into each agent request.
-- **Agent loop**: model planning, tool calling, tool observation, post-tool summarization, and final streaming output.
-- **Tool system**: workspace file listing, search, file read/write, patch application, shell execution, web fetch, and weather lookup.
-- **Streaming UI**: final answers render incrementally with a typewriter-like experience.
-- **Task queue**: when a task is running, new prompts are queued instead of interrupting the current run.
-- **Markdown-rich output**: code highlighting, light code blocks, copy buttons, tables, and Mermaid diagram rendering.
-- **Failure-aware flow**: successful tool results are preserved even if the final model summary times out.
-- **Packaging scripts**: build and package scripts for desktop distribution.
+- Workspace-first conversations with one or more chats under each local directory.
+- OpenAI-compatible model configuration, including DeepSeek, OpenAI, MiniMax, Qwen, Kimi, Groq, OpenRouter, Ollama, and other compatible endpoints.
+- Codex-style agent loop with tool calls, observations, context compaction, retry/recovery, and resumable task state.
+- Built-in tools for workspace file listing, search, file read/write, patch application, shell execution, web search/open/research, browser rendering, weather, planning, and context compaction.
+- Streaming UI with task queue support.
+- Markdown rendering with code highlighting, tables, copy buttons, and Mermaid diagrams.
+- Local-first storage for workspaces, conversations, transcripts, memory, and model settings.
+- Desktop packaging scripts for macOS, Windows, and Linux.
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-  UI["Renderer<br/>React + Zustand"] --> Bridge["Dev Bridge / Electron IPC"]
-  Bridge --> Loop["Agent Loop"]
-  Loop --> Model["LLM API<br/>DeepSeek / OpenAI-compatible"]
+  UI["Renderer<br/>React + Zustand"] --> IPC["Electron IPC / Dev Bridge"]
+  IPC --> Loop["Agent Loop"]
+  Loop --> Model["OpenAI-compatible LLM API"]
   Loop --> Tools["Tool Registry"]
-  Tools --> Workspace["Workspace Files"]
+  Tools --> Workspace["Workspace Tools"]
   Tools --> Shell["Shell"]
-  Tools --> Web["Web / Weather"]
-  UI --> Memory["Workspace + Conversation Memory"]
-  Memory --> Bridge
+  Tools --> Web["Web Search / Browser Open"]
+  UI --> Memory["Conversation + Workspace Memory"]
+  Memory --> IPC
 ```
-
-## Workspace And Context Model
-
-PigAgent separates context into three layers:
-
-- **Transcript**: the full message history used for UI restore and debugging.
-- **Conversation memory**: short-term task memory, including summaries, touched files, artifacts, and recent tool results.
-- **Workspace memory**: project-level memory shared by conversations in the same workspace.
-
-Each request is built by the Context Builder:
-
-```text
-system prompt
-workspace memory
-conversation memory
-recent messages
-current user prompt
-```
-
-This keeps long-running conversations useful without blindly sending every old tool result back to the model.
 
 ## Project Structure
 
 ```text
-PigAgent/
+Nexa/
+├── config/                 # Vite and TypeScript config
+├── docs/                   # Architecture and design notes
+├── resources/              # App icons and static resources
+├── scripts/                # Build, dev, packaging, reference sync
 ├── src/
 │   ├── main/
-│   │   ├── agent-core/          # Agent loop, tools, context builder
-│   │   ├── agent-runtime/       # CLI agent runtime adapters
-│   │   ├── dev-bridge.ts        # HTTP/SSE bridge for browser dev mode
-│   │   ├── ipc-handlers.ts      # Electron IPC handlers
-│   │   └── llm-api.ts           # OpenAI-compatible LLM API integration
+│   │   ├── agent-core/     # Agent loop, tools, context builder
+│   │   ├── agent-runtime/  # CLI adapter runtime
+│   │   ├── ipc-handlers.ts
+│   │   ├── llm-api.ts
+│   │   └── preload.ts
 │   ├── renderer/
-│   │   ├── components/          # Chat, workspace sidebar, settings
-│   │   └── stores/app-store.ts  # Zustand state, queue, memory, transcript
-│   └── shared/                  # Shared types and IPC channels
-├── docs/                        # Architecture and design docs
-├── resources/                   # App icon and static resources
-├── scripts/                     # Packaging and utility scripts
-└── config/                      # Vite, TypeScript, Tailwind config
+│   │   ├── components/     # Chat, settings, workspace UI
+│   │   └── stores/         # Zustand app state and memory
+│   └── shared/             # Shared types and IPC channels
+└── package.json
 ```
+
+## Requirements
+
+- Node.js 22+
+- npm
+- An OpenAI-compatible API key for the built-in LLM path
+- Optional local CLI agents such as Claude Code, Codex CLI, Hermes, Kimi, Kiro, or OpenCode
 
 ## Getting Started
 
-### Requirements
-
-- Node.js 22 or newer
-- npm
-- A DeepSeek or OpenAI-compatible API key for the built-in LLM path
-- Optional CLI agents such as Claude Code, Codex CLI, Hermes, Kimi, or Kiro
-
-### Install
+Install dependencies:
 
 ```bash
 npm install
 ```
 
-### Run In Browser Dev Mode
+Run the Electron app in development:
 
-Start the bridge:
+```bash
+npm run dev
+```
+
+Run the browser-only development bridge:
 
 ```bash
 npm run dev:bridge
-```
-
-Start Vite:
-
-```bash
 npm run dev:renderer
 ```
 
@@ -121,19 +102,21 @@ Open:
 http://localhost:5173/
 ```
 
-### Run Electron
+## Build And Package
+
+Build both main and renderer processes:
 
 ```bash
-npm start
+npm run build
 ```
 
-### Package
+Package for the current platform:
 
 ```bash
 npm run pack
 ```
 
-Platform-specific scripts are also available:
+Platform-specific packaging:
 
 ```bash
 npm run pack:mac
@@ -141,31 +124,29 @@ npm run pack:win
 npm run pack:linux
 ```
 
-## Configuration
+## Model Configuration
 
-PigAgent includes a default DeepSeek-compatible model configuration. The API key can be loaded from an environment file or entered in settings.
+Open Settings in the app and add an OpenAI-compatible model provider. API keys are stored locally by the desktop app. Do not commit secrets to the repository.
 
-Typical configuration:
+Example DeepSeek-compatible configuration:
 
 ```text
-Provider: DeepSeek
+Name: DeepSeek
 Base URL: https://api.deepseek.com
 Model: deepseek-chat
-Env Var: DEEPSEEK_API_KEY
 ```
-
-Do not commit API keys. Keep secrets in local `.env` files or system environment variables.
 
 ## Documentation
 
+- [Documentation index](docs/README.md)
 - [Agent loop architecture](docs/agent-loop-architecture.md)
 - [Context management design](docs/context-management-design.md)
-- [Workspace and conversation context design](docs/workspace-conversation-context-design.md)
+- [Workspace and conversation design](docs/workspace-conversation-context-design.md)
 - [Streaming UI issue analysis](docs/agent-streaming-ui-issues.md)
 
-## Status
+## Repository Hygiene
 
-PigAgent is under active development. Core agent-loop, workspace context, model configuration, streaming UI, and Markdown rendering are implemented, while native directory picking, richer compaction, conversation deletion, and production hardening are still evolving.
+Generated files, local caches, packaged apps, API keys, and runtime state should not be committed. See [.gitignore](.gitignore) and [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

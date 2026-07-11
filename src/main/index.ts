@@ -15,7 +15,7 @@ function createWindow(): void {
     height: 900,
     minWidth: 1000,
     minHeight: 600,
-    title: 'PigAgent',
+    title: 'Nexa',
     icon: appIconPath,
     titleBarStyle: 'hiddenInset',
     webPreferences: {

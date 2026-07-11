@@ -1,12 +1,12 @@
-# PigAgent — Agent Loop 说明
+# Nexa — Agent Loop 说明
 
-> 本文档记录了 PigAgent（Codex 风格桌面软件 Agent）的核心运行逻辑：**Agent Loop**（智能体循环）。
+> 本文档记录了 Nexa（Codex 风格桌面软件 Agent）的核心运行逻辑：**Agent Loop**（智能体循环）。
 
 ---
 
 ## 什么是 Agent Loop？
 
-Agent Loop 是 PigAgent 的核心工作模式。它遵循一个持续的 **Reason → Act → Observe** 循环，直到用户请求被真正完成。
+Agent Loop 是 Nexa 的核心工作模式。它遵循一个持续的 **Reason → Act → Observe** 循环，直到用户请求被真正完成。
 
 ```
 ┌─────────────────────────────────────┐
@@ -106,4 +106,4 @@ Agent Loop:
 
 ---
 
-*此文档由 PigAgent 自动生成。*
+*此文档由 Nexa 自动生成。*

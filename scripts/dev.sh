@@ -1,11 +1,11 @@
 #!/bin/bash
-# PigAgent 启动脚本 - 启动 bridge 服务器 + Vite 开发服务器
+# Nexa 启动脚本 - 启动 bridge 服务器 + Vite 开发服务器
 
 set -e
 
 cd "$(dirname "$0")/.."
 
-echo "=== PigAgent Dev ==="
+echo "=== Nexa Dev ==="
 
 # 1. 编译主进程
 echo "[1/3] Building main process..."
@@ -28,7 +28,7 @@ sleep 2
 echo "       Vite PID: $VITE_PID"
 
 echo ""
-echo "=== PigAgent Dev Ready ==="
+echo "=== Nexa Dev Ready ==="
 echo "   UI:   http://localhost:5173"
 echo "   Bridge: http://localhost:9876"
 echo ""

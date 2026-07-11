@@ -4,7 +4,7 @@ async function fetchJson(url: string): Promise<any> {
   const response = await fetch(url, {
     headers: {
       Accept: 'application/json',
-      'User-Agent': 'PigAgent/1.0',
+      'User-Agent': 'Nexa/1.0',
     },
   });
   const text = await response.text();

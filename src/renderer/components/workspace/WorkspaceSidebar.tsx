@@ -24,8 +24,8 @@ export default function WorkspaceSidebar() {
   const handleAddWorkspace = async () => {
     if (loading) return;
     let dirPath: string | null = null;
-    if (window.pigagent?.selectDirectory) {
-      dirPath = await window.pigagent.selectDirectory();
+    if (window.nexa?.selectDirectory) {
+      dirPath = await window.nexa.selectDirectory();
     } else {
       window.alert('当前浏览器预览无法打开系统目录选择器，请在 Electron 桌面应用中添加工作区。');
       return;
@@ -51,7 +51,7 @@ export default function WorkspaceSidebar() {
 
   return (
     <aside className="flex h-full w-[260px] shrink-0 flex-col border-r border-[var(--border)] bg-[var(--card)]/70">
-      <div className="flex h-12 items-center justify-between border-b border-[var(--border)] px-3">
+      <div className="app-drag flex h-12 items-center justify-between border-b border-[var(--border)] px-3">
         <div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">Workspaces</div>
         <button
           onClick={handleAddWorkspace}

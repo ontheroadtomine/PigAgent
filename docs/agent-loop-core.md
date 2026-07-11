@@ -1,4 +1,4 @@
-# PigAgent Agent Loop 核心实现文档
+# Nexa Agent Loop 核心实现文档
 
 > 版本: 2.0  
 > 最后更新: 2025-07-04  
@@ -8,11 +8,11 @@
 
 ## 1. 架构总览
 
-PigAgent 的 Agent Loop 是一个 **ReAct (Reasoning + Acting)** 模式的迭代执行引擎。它让 LLM 在每一轮中推理、调用工具、观察结果，直到任务完成。
+Nexa 的 Agent Loop 是一个 **ReAct (Reasoning + Acting)** 模式的迭代执行引擎。它让 LLM 在每一轮中推理、调用工具、观察结果，直到任务完成。
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                          PigAgent 整体架构                                    │
+│                          Nexa 整体架构                                    │
 │                                                                             │
 │  ┌──────────┐    ┌──────────────────┐    ┌──────────────────────────────┐   │
 │  │ Renderer │◄──►│   IPC / Bridge   │◄──►│        Agent Loop            │   │
@@ -139,7 +139,7 @@ interface AgentToolResult {
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
 │  │  run(options) 入口                                                   │    │
-│  │  - 构建 system prompt（PigAgent 身份 + 工具使用指南）                  │    │
+│  │  - 构建 system prompt（Nexa 身份 + 工具使用指南）                  │    │
 │  │  - 将 user prompt 加入 messages                                      │    │
 │  │  - 初始化 toolCallsLog = []                                          │    │
 │  └──────────────────────┬──────────────────────────────────────────────┘    │
@@ -212,7 +212,7 @@ const messages: ChatMessageWire[] = [
 ```
 
 `buildSystemPrompt()` 构建的 system prompt 包含：
-- PigAgent 身份声明（"You are PigAgent, a Codex-style desktop software agent."）
+- Nexa 身份声明（"You are Nexa, a Codex-style desktop software agent."）
 - 工具使用指南（先看再改、批量读取、聚焦命令、不暴露密钥）
 - 工具列表说明（weather_current, web_fetch, workspace_files 等）
 
@@ -415,7 +415,7 @@ Array.from(toolCallMap.entries())
 
 ```
 Renderer (app-store.ts)
-  → window.pigagent.chatLlmApi(config, prompt, cwd)
+  → window.nexa.chatLlmApi(config, prompt, cwd)
     → ipcMain.handle(IPC.LLM_API_CHAT)
       → chatWithLlmApi() [llm-api.ts]
         → resolveApiKey() 解析 API 密钥
@@ -649,7 +649,7 @@ export const calculatorTool: AgentTool = {
 ```typescript
 function buildSystemPrompt(): string {
   return [
-    'You are PigAgent, a Codex-style desktop software agent.',
+    'You are Nexa, a Codex-style desktop software agent.',
     // ... 添加自定义指令
   ].join('\n');
 }
